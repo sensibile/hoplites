@@ -171,6 +171,29 @@ with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
         run(repo, "git", "add", path)
         run(repo, "git", "commit", "-m", "docs: deletion with unchanged reference")
         run(repo, "git", "push", "origin", branch, success=False)
+    # A blank line inside a shell heredoc is executable input, not prose.
+    run(repo, "git", "switch", "-c", "docs/indented-fixture", base)
+    heredoc = "# Readme\n\n    cat <<'EOF'\n    first\n\n    second\n    EOF\n"
+    (repo / "README.md").write_text(heredoc)
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: indented heredoc baseline")
+    indented_base = run(repo, "git", "rev-parse", "HEAD")
+    (repo / "README.md").write_text(heredoc.replace("first\n\n", "first\n"))
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: change heredoc input")
+    indented_head = run(repo, "git", "rev-parse", "HEAD")
+    verdict = run(repo, "python3", "scripts/documentation-gate", indented_base, indented_head)
+    assert "docs_only=False" in verdict
+    run(repo, "git", "push", "origin", "docs/indented-fixture", success=False)
+    # Reference definitions in Markdown containers remain repository-local links.
+    run(repo, "git", "switch", "-c", "docs/quoted-reference", link_base)
+    (repo / "README.md").write_text("# Readme\n> [Guide][g]\n> [g]: docs/old%20guide.md\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: quoted reference baseline")
+    (repo / "docs" / "old guide.md").unlink()
+    run(repo, "git", "add", "docs/old guide.md")
+    run(repo, "git", "commit", "-m", "test: deletion behind quoted reference")
+    run(repo, "git", "push", "origin", "docs/quoted-reference", success=False)
     # Another clone advances main to an object absent from the pushing repository.
     other = folder / "other"
     run(folder, "git", "clone", "--branch", "main", str(remote), str(other))
@@ -192,5 +215,5 @@ with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
     run(repo, "git", "cat-file", "-e", remote_head + "^{commit}")
     assert (fetch_head.read_bytes() if fetch_head.exists() else None) == previous_fetch
 print(
-    "PASS: three documentation pushes and 24 rejection paths in isolated real Git repositories; container/indented examples, real H1 and deleted-link checks"
+    "PASS: three documentation pushes and 26 rejection paths in isolated real Git repositories; container/indented examples including heredoc blank lines, real H1 and deleted-link checks"
 )

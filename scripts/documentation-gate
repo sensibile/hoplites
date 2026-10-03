@@ -68,9 +68,22 @@ def container_content(line):
 def markdown_sections(text):
     """Conservative block scan: uncertain indentation takes the code path."""
     outside, blocks, current = [], [], []
+    indented, pending_blank = [], []
     marker = None
     for line in text.splitlines():
         content = container_content(line)
+        is_indented = content.strip() and (content.startswith("    ") or line.startswith("    "))
+        if indented:
+            if not content.strip():
+                pending_blank.append(line)
+                continue
+            if is_indented:
+                indented.extend([*pending_blank, line])
+                pending_blank = []
+                continue
+            blocks.append("\n".join(indented))
+            outside.extend(pending_blank)
+            indented, pending_blank = [], []
         # Extra indentation may be a list continuation or an indented code block.
         match = re.match(r"^ *(`{3,}|~{3,})(.*)$", content)
         if marker is not None:
@@ -85,12 +98,14 @@ def markdown_sections(text):
                 current, marker = [], None
         elif match:
             marker, current = match.group(1), [line]
-        elif content.strip() and (content.startswith("    ") or line.startswith("    ")):
-            blocks.append(line)
+        elif is_indented:
+            indented = [line]
         else:
             outside.append(line)
     if marker is not None:
         blocks.append("\n".join(current))
+    if indented:
+        blocks.append("\n".join(indented))
     return outside, blocks, marker is not None
 
 
@@ -112,7 +127,7 @@ def text_errors(path, text, entries):
     if unclosed:
         errors.append("unclosed fenced code block")
     # Inline and reference Markdown links. Remote URLs and anchors are not fetched.
-    prose = "\n".join(outside)
+    prose = "\n".join(container_content(line) for line in outside)
     links = re.findall(r"!?\[[^\]]*\]\(\s*(<[^>]+>|[^\s)]+)", prose)
     links += re.findall(r"^\s{0,3}\[[^\]]+\]:\s*(<[^>]+>|\S+)", prose, re.M)
     for raw in links:
