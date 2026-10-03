@@ -33,8 +33,14 @@ Git common directory의 `push-reviews/`에 계획/등록 결과를 저장한다.
 
 ## PR
 
-문제·변경 결과, 계약/책임 변경, 검사 및 리뷰 대상 SHA와 결과, 미실행 이유, 위험·복구 방법을 적는다. 기본 squash merge이며 commit/push/merge는 각각 명시적 승인을 받는다. Hoplites는 현재 submodule을 사용하지 않는다.
+문제·변경 결과, 계약/책임 변경, 검사 및 리뷰 대상 SHA와 결과, 미실행 이유, 위험·복구 방법을 적는다. 기본 squash merge이며 commit은 검증 후 자동 수행하며 코드 push/merge는 명시적 승인을 받는다. 문서 전용 작업은 아래 gate 정책을 따른다. Hoplites는 현재 submodule을 사용하지 않는다.
 
 ## Producer 호환성
 
 Desktop codex-security 결과의 `target.remote`는 선택 필드다. 없으면 full base/head Git object SHA로 검사 코드를 식별하고, 별도 receipt가 실제 push URL/ref를 결합한다. remote가 제공되면 SSH/HTTPS 표기를 정규화해 저장소 위치도 비교한다. 다른 저장소라도 동일한 base/head 객체는 같은 검사 코드이며, seal 자체는 실행자 신원을 인증하지 않는다.
+
+## 문서 작업과 자동 커밋
+
+검증된 한 의도 단위는 적절한 시점에 별도 승인 없이 commit한다. 문서 전용 작업은 [문서 작업 규칙](docs/documentation-policy.md)에 따라 검증하고 push·PR 생성·squash merge까지 진행한다. 기존 코드 push·merge 승인 조건은 코드 작업에 적용한다.
+
+문서 전용 변경도 pre-push를 정상 실행한다. 원격 main과 head의 merge-base부터 누적 범위를 검사하며 documentation-policy GitHub job이 같은 문서 검사를 실행한다. `python3 scripts/documentation-gate BASE_SHA HEAD_SHA`로 로컬 검증한다. 코드 변경이 섞이면 보안·독립 리뷰 증거를 요구한다. 실행 예제 변경은 코드 작업으로 검토한다.

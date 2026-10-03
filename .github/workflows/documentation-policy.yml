@@ -1,0 +1,23 @@
+name: Documentation policy
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  documentation-policy:
+    name: documentation-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - name: Validate cumulative PR documentation changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          TARGET_BRANCH: ${{ github.event.pull_request.base.ref }}
+        run: |
+          MERGE_BASE=$(git merge-base "$BASE_SHA" "$HEAD_SHA")
+          python3 scripts/documentation-gate "$MERGE_BASE" "$HEAD_SHA" --target-branch "$TARGET_BRANCH"

@@ -35,7 +35,7 @@ python3 -m venv .venv
 python3 scripts/check-config
 ```
 
-4. 승인받은 commit은 한 의도로 만들고 `feat|fix|refactor|test|docs|chore:` 제목을 사용한다.
+4. 검증된 변경은 적절한 시점에 별도 승인 없이 한 의도로 commit하고 `feat|fix|refactor|test|docs|chore:` 제목을 사용한다.
 5. 코드·실행 설정 변경은 push 승인 후 계획 → 보안 검사 → 독립 리뷰 → sealed 결과 등록 → push → PR 순서를 따른다. 문서 전용 변경은 아래 구분을 따른다. 상세 명령과 증적 형식은 [DEVELOPMENT.md](../DEVELOPMENT.md)에 있다.
 
 `post-code`는 Git의 자동 이벤트가 아니다. 에이전트·편집기가 명시적으로 호출하며 자동 staging을 하지 않는다. 기존 Python 전체를 일괄 포맷하지 않고 현재 `HEAD` 대비 변경한 파일과 새 Python 파일만 처리한다.
@@ -50,7 +50,7 @@ pre-commit은 unstaged tracked 변경과 non-ignored untracked 파일을 차단�
 - 배포 JSON·쉘 스크립트 문법·문서의 로컬 파일 링크 확인
 - 기존 unittest 실행
 
-새 개발 설정 자체가 아직 untracked인 단계에서는 pre-commit이 차단되는 것이 정상이다. 로컬 검사와 아래 disposable 테스트를 먼저 실행하고, commit 승인 후 의도한 파일을 stage한다.
+새 개발 설정 자체가 아직 untracked인 단계에서는 pre-commit이 차단되는 것이 정상이다. 로컬 검사와 아래 disposable 테스트를 먼저 실행하고, 검증 후 의도한 파일만 stage하고 commit한다.
 
 ```sh
 python3 scripts/test-development-hooks
@@ -84,4 +84,4 @@ python3 scripts/test-push-gate
 
 실행 코드·테스트·빌드/배포 설정·의존성·migration·실행 가능한 보안 통제가 바뀌지 않는 문서 작업은 내용·로컬 링크·diff 확인으로 검증한다. AGENTS.md와 작업 지침·ADR도 문서 작업으로 구분한다. 보안 스캔과 독립 리뷰를 의무로 실행하지 않는다.
 
-현재 훅은 이 예외를 자동 판별하지 못하므로, 문서 전용 diff를 확인한 뒤에만 `git -c core.hooksPath=/dev/null push origin BRANCH`로 해당 push에 한정해 훅을 생략한다. 영구 Git 설정을 바꾸지 않으며 코드 변경에는 적용하지 않는다. 서버 main 보호와 PR 절차는 유지한다.
+문서 전용 변경은 [문서 작업 규칙](documentation-policy.md)에 따라 pre-push 문서 gate와 GitHub documentation-policy를 통과해야 한다. 훅을 우회하지 않는다. 완성 후 별도 승인 없이 push·PR 생성·squash merge까지 진행하며 서버 보호 규칙을 유지한다.

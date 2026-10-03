@@ -1,0 +1,123 @@
+#!/usr/bin/env python3
+"""Real Git integration checks for documentation exemptions and mixed changes."""
+
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def run(repo, *args, success=True):
+    env = os.environ.copy()
+    for key in subprocess.check_output(
+        ["git", "rev-parse", "--local-env-vars"], text=True
+    ).splitlines():
+        env.pop(key, None)
+    result = subprocess.run(args, cwd=repo, env=env, capture_output=True, text=True)
+    if (result.returncode == 0) != success:
+        raise AssertionError(result.stdout + result.stderr)
+    return result.stdout.strip()
+
+
+with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
+    folder = Path(folder).resolve()
+    repo, remote = folder / "repo", folder / "remote.git"
+    run(folder, "git", "init", "--bare", str(remote))
+    run(folder, "git", "init", "-b", "main", str(repo))
+    run(repo, "git", "config", "user.name", "Gate Test")
+    run(repo, "git", "config", "user.email", "gate@example.invalid")
+    run(repo, "git", "config", "core.hooksPath", str(repo / ".githooks"))
+    (repo / "README.md").write_text("# Readme\n\nInitial documentation.\n")
+    (repo / "code.py").write_text("value = 1\n")
+    (repo / "scripts").mkdir()
+    for name in ("review-gate", "documentation-gate"):
+        shutil.copy2(ROOT / "scripts" / name, repo / "scripts" / name)
+    run(repo, "git", "add", ".")
+    run(repo, "git", "commit", "-m", "chore: fixture baseline")
+    base = run(repo, "git", "rev-parse", "HEAD")
+    run(repo, "git", "remote", "add", "origin", str(remote))
+    run(repo, "git", "push", "origin", "main")
+    (repo / ".githooks").mkdir()
+    shutil.copy2(ROOT / ".githooks/pre-push", repo / ".githooks/pre-push")
+    run(repo, "git", "switch", "-c", "docs/pass")
+    (repo / "README.md").write_text("# Readme\n\nUpdated [source](code.py).\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: valid text")
+    # A real push succeeds without fabricated security or independent evidence.
+    run(repo, "git", "push", "-u", "origin", "docs/pass")
+    (repo / "README.md").write_text("# Readme\n\nSecond prose push [source](code.py).\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: follow-up prose")
+    run(repo, "git", "push")
+    passed_head = run(repo, "git", "rev-parse", "HEAD")
+    run(
+        repo,
+        "python3",
+        "scripts/documentation-gate",
+        base,
+        passed_head,
+        "--target-branch",
+        "release",
+        success=False,
+    )
+    failures = [
+        ("docs/whitespace", "README.md", "# Readme\nBad text  \n"),
+        ("docs/link", "README.md", "# Readme\n[Missing](absent.md)\n"),
+        ("docs/fence", "README.md", "# Readme\n```python\nvalue = 2\n"),
+        ("docs/title", "README.md", "Missing title\n"),
+        ("docs/code", "code.py", "value = 2\n"),
+        ("docs/example", "README.md", "# Readme\n```python\nvalue = 2\n```\n"),
+    ]
+    for branch, name, content in failures:
+        run(repo, "git", "switch", "-c", branch, base)
+        (repo / name).write_text(content)
+        run(repo, "git", "add", name)
+        run(repo, "git", "commit", "-m", "test: rejected change")
+        run(repo, "git", "push", "origin", branch, success=False)
+    run(repo, "git", "switch", "-c", "docs/mixed", base)
+    (repo / "code.py").write_text("value = 3\n")
+    run(repo, "git", "add", "code.py")
+    run(repo, "git", "commit", "-m", "fix: earlier code change")
+    (repo / "README.md").write_text("# Readme\nLater prose change.\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: later prose")
+    run(repo, "git", "push", "origin", "docs/mixed", success=False)
+    # The last commit being docs-only cannot hide prior code in the PR range.
+    run(repo, "git", "switch", "-c", "docs/transient-code", base)
+    (repo / "code.py").write_text("temporary_secret = 1\n")
+    run(repo, "git", "add", "code.py")
+    run(repo, "git", "commit", "-m", "fix: transient code")
+    (repo / "code.py").write_text("value = 1\n")
+    (repo / "README.md").write_text("# Readme\nOnly prose at final head.\n")
+    run(repo, "git", "add", "code.py", "README.md")
+    run(repo, "git", "commit", "-m", "docs: restore code and update prose")
+    run(repo, "git", "push", "origin", "docs/transient-code", success=False)
+    run(repo, "git", "switch", "-c", "docs/mode", base)
+    (repo / "README.md").chmod(0o755)
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: executable documentation")
+    run(repo, "git", "push", "origin", "docs/mode", success=False)
+    run(repo, "git", "switch", "-c", "docs/symlink", base)
+    (repo / "README.md").unlink()
+    (repo / "README.md").symlink_to("code.py")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: symlink documentation")
+    run(repo, "git", "push", "origin", "docs/symlink", success=False)
+    run(repo, "git", "switch", "-c", "docs/delete", passed_head)
+    (repo / "code.py").unlink()
+    run(repo, "git", "add", "code.py")
+    run(repo, "git", "commit", "-m", "test: code deletion")
+    run(repo, "git", "push", "origin", "docs/delete", success=False)
+    run(repo, "git", "switch", "-c", "docs/divergent", base)
+    (repo / "README.md").write_text("# Readme\nDivergent prose replacement.\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: divergent replacement")
+    run(repo, "git", "push", "--force", "origin", "docs/divergent:docs/pass", success=False)
+    run(repo, "git", "push", "origin", "docs/pass:main", success=False)
+    run(repo, "git", "push", "origin", "--delete", "docs/pass", success=False)
+print(
+    "PASS: two successive documentation pushes and 15 rejection paths in isolated real Git repositories"
+)
