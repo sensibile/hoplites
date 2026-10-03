@@ -72,13 +72,13 @@ python3 scripts/image_pipeline.py eclipse-temurin:21-jre-noble \
 
 `--vex`는 `--upload`와 함께 사용한다. 현재 Ubuntu advisory 경로를 지원하며 검증된 판정은 DT 분석 상태에 반영된다. 다른 배포판, 근거 부족, 판정 충돌은 미해결로 남긴다. VEX를 생략하면 BOM 업로드까지만 진행한다.
 
-### Trivy 비교본 추가
+### 새 이미지 실험의 필수 Trivy 비교
 
 ```sh
 python3 scripts/image_pipeline.py alpine:3.24 --trivy --upload
 ```
 
-`--trivy`는 취약점·라이선스 검사를 켠 CycloneDX 비교본을 추가한다. DT에 올라가는 기본 BOM은 정규화한 Syft 결과이다. Trivy의 발견 항목을 DT에 자동 병합하는 기능은 아직 없다.
+`--trivy`는 취약점·라이선스 검사를 켠 CycloneDX 비교본을 추가한다. 새 이미지·버전 실험에서는 필수로 실행하고 [작업 지침](image-processing-workflow.md)에 따라 결과를 항목 단위로 대조한다. DT에 올라가는 기본 BOM은 정규화한 Syft 결과이다. Trivy의 발견 항목을 DT에 자동 병합하는 기능은 아직 없다.
 
 ## 3. 결과 확인과 제출
 
@@ -107,7 +107,7 @@ python3 -m json.tool artifacts/ubuntu-amd64-run-001/summary.json
 
 ## 4. 새 이미지를 추가하며 갱신하기
 
-1. 새 이미지에 같은 CLI를 실행한다. 비교가 필요하면 `--trivy`를 추가한다.
+1. 최신 구현 checkout에서 새 이미지에 같은 CLI를 `--trivy`와 함께 실행한다. 먼저 로컬 결과를 검토하고, Syft/Trivy 항목별 차이와 미해결을 기록한다. 상세 순서와 완료 기준은 [이미지 처리 작업 지침](image-processing-workflow.md)을 따른다.
 2. `summary.json`의 `unresolved`와 단계별 근거를 확인한다.
 3. 버전·라이선스 원문을 확인하고 URL, commit, SHA-256, 적용 조건을 기록한다.
 4. 데이터 규칙은 새 `migrations/NNNN_*.sql`에 추가한다. 기존 마이그레이션은 수정하지 않는다. 패키지 DB나 설치 형태가 다르면 어댑터와 회귀 검증을 추가한다.

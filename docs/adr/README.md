@@ -14,3 +14,5 @@
 - [0007 배포판 패치 판정과 VEX](0007-distro-vex.md)
 - [0008 이미지 입력 파이프라인과 확장](0008-image-pipeline.md)
 - [0009 공통 개발 정책과 검증 훅](0009-development-workflow.md)
+
+- [0010 새 이미지 처리의 작업 계약](0010-image-processing-contract.md)
