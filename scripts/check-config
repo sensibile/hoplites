@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Local development checks; only explicit format mode changes working files."""
+
+import argparse
+import ast
+import json
+import os
+from pathlib import Path
+import re
+import sqlite3
+import subprocess
+import sys
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def git_paths(*args):
+    result = subprocess.check_output(["git", *args], cwd=ROOT)
+    return [os.fsdecode(name) for name in result.split(b"\0") if name]
+
+
+def is_python(path):
+    if not path.is_file() or path.is_symlink():
+        return False
+    return path.suffix == ".py" or (
+        path.parent == ROOT / "scripts" and "python" in path.read_text().splitlines()[0]
+    )
+
+
+def python_files():
+    return sorted(
+        p for folder in (ROOT / "scripts", ROOT / "tests") for p in folder.iterdir() if is_python(p)
+    )
+
+
+def changed_python():
+    # Formatting applies to the intended change, not an unrelated legacy reformat.
+    names = set(git_paths("diff", "HEAD", "--name-only", "-z", "--diff-filter=ACMR"))
+    names.update(git_paths("ls-files", "--others", "--exclude-standard", "-z"))
+    return sorted(ROOT / name for name in names if is_python(ROOT / name))
+
+
+def ruff():
+    path = ROOT / ".venv" / "bin" / "ruff"
+    if not path.is_file():
+        raise ValueError("Install requirements-dev.txt in .venv; see docs/development-workflow.md")
+    version = subprocess.check_output([str(path), "--version"], text=True).strip()
+    expected = "ruff " + (ROOT / "requirements-dev.txt").read_text().strip().split("==")[1]
+    if version != expected:
+        raise ValueError("Ruff version differs from requirements-dev.txt")
+    return str(path)
+
+
+def check_documents():
+    documents = [ROOT / "AGENTS.md", ROOT / "DEVELOPMENT.md", ROOT / "README.md"]
+    documents.extend((ROOT / "docs").rglob("*.md"))
+    documents.extend((ROOT / "deploy").rglob("*.md"))
+    documents.append(ROOT / ".github" / "pull_request_template.md")
+    for path in documents:
+        text = path.read_text()
+        if not text.strip():
+            raise ValueError("Empty guidance: " + str(path))
+        for target in re.findall(r"\]\(([^\s)]+)\)", text):
+            if "://" in target or target.startswith("#"):
+                continue
+            if not (path.parent / target.split("#")[0]).exists():
+                raise ValueError("Broken local link: " + str(path) + " -> " + target)
+
+
+def checks(mode):
+    files = python_files()
+    changed = changed_python()
+    formatter = ruff()
+    if mode == "format":
+        if changed:
+            subprocess.run(
+                [formatter, "format", "--no-cache", *map(str, changed)], check=True, cwd=ROOT
+            )
+        print("PASS: changed Python formatted; no staging performed")
+        return
+    if changed:
+        subprocess.run(
+            [formatter, "format", "--check", "--no-cache", *map(str, changed)], check=True, cwd=ROOT
+        )
+    subprocess.run([formatter, "check", "--no-cache", *map(str, files)], check=True, cwd=ROOT)
+    for path in files:
+        ast.parse(path.read_text(), filename=str(path), feature_version=(3, 10))
+    with sqlite3.connect(":memory:") as connection:
+        for path in sorted((ROOT / "migrations").glob("*.sql")):
+            connection.executescript(path.read_text())
+    for path in (ROOT / "deploy").rglob("*.json"):
+        json.loads(path.read_text())
+    check_documents()
+    for path in (ROOT / ".githooks").iterdir():
+        subprocess.run(["sh", "-n", str(path)], check=True)
+    subprocess.run(["sh", "-n", str(ROOT / "scripts/install-hooks")], check=True)
+    subprocess.run(["sh", "-n", str(ROOT / "scripts/prepare-push")], check=True)
+    subprocess.run(
+        [sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests"], check=True, cwd=ROOT
+    )
+    print("PASS: formatting, static analysis, syntax, SQL, config, links and tests")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "mode", choices=["check", "precommit", "format"], default="check", nargs="?"
+    )
+    try:
+        checks(parser.parse_args().mode)
+    except (
+        ValueError,
+        OSError,
+        SyntaxError,
+        sqlite3.Error,
+        subprocess.CalledProcessError,
+    ) as error:
+        print("BLOCKED: local checks:", error, file=sys.stderr)
+        sys.exit(1)

@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""Exercise local checks in a disposable checkout; never stage the real repository."""
+
+import hashlib
+import os
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+
+root = Path(__file__).resolve().parents[1]
+count = 0
+
+
+def digest(path):
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+with tempfile.TemporaryDirectory(prefix="hoplites-hooks-test-") as directory:
+    repo = Path(directory).resolve()
+    names = subprocess.check_output(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "-z"], cwd=root
+    ).split(b"\0")
+    for raw in set(names) - {b""}:
+        name = os.fsdecode(raw)
+        source = root / name
+        if source.is_file():
+            target = repo / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source, target)
+    (repo / ".venv").symlink_to(root / ".venv", target_is_directory=True)
+
+    def run(args, success=True):
+        global count
+        result = subprocess.run(args, cwd=repo, text=True, capture_output=True)
+        assert (result.returncode == 0) == success, (args, result.stdout, result.stderr)
+        count += 1
+        return result.stdout.strip()
+
+    run(["git", "init", "-b", "main"])
+    run(["git", "config", "user.name", "Synthetic Test"])
+    run(["git", "config", "user.email", "test@example.invalid"])
+    run(["git", "add", "."])
+    run(["git", "commit", "-m", "test: baseline"])
+    run(["./scripts/install-hooks"])
+    assert run(["git", "config", "core.hooksPath"]) == str(repo / ".githooks")
+    run(["./.githooks/pre-commit"])
+
+    # Untracked and partially staged content must fail without changing the index.
+    target = repo / "tests" / "hook_fixture.py"
+    target.write_text("value=1\n")
+    index = repo / ".git" / "index"
+    before = digest(index)
+    run(["./.githooks/pre-commit"], False)
+    assert digest(index) == before and target.read_text() == "value=1\n"
+    run(["git", "add", str(target)])
+    before = digest(index)
+    run(["./.githooks/pre-commit"], False)  # unformatted staged code
+    assert digest(index) == before and target.read_text() == "value=1\n"
+    run(["./.githooks/post-code"])
+    assert target.read_text() == "value = 1\n" and digest(index) == before
+    run(["./.githooks/pre-commit"], False)  # formatting was not automatically staged
+    run(["git", "add", str(target)])
+    run(["./.githooks/pre-commit"])
+
+    target.write_text("value = absent_name\n")
+    run(["git", "add", str(target)])
+    before = digest(index)
+    run(["./.githooks/pre-commit"], False)  # F821 name error
+    assert digest(index) == before and target.read_text() == "value = absent_name\n"
+    target.write_text("value = 1\n")
+    run(["git", "add", str(target)])
+    bad_sql = repo / "migrations" / "9999_invalid.sql"
+    bad_sql.write_text("THIS IS NOT SQL;\n")
+    run(["git", "add", str(bad_sql)])
+    run(["./.githooks/pre-commit"], False)
+
+    run(["git", "config", "core.hooksPath", "/tmp/other-hooks"])
+    run(["./scripts/install-hooks"], False)
+    assert run(["git", "config", "core.hooksPath"]) == "/tmp/other-hooks"
+
+print("PASS:", count, "development hook assertions; disposable checkout only")

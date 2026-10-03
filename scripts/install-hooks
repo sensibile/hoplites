@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+root=$(git rev-parse --show-toplevel)
+cd "$root"
+existing=$(git config --get core.hooksPath || true)
+desired="$root/.githooks"
+if [ -n "$existing" ] && [ "$existing" != "$desired" ] && [ "$existing" != .githooks ]; then
+  echo "BLOCKED: existing hooksPath: $existing; inspect before replacing" >&2
+  exit 1
+fi
+git config --local core.hooksPath "$desired"
+echo "Installed hooks: $desired (shared repository configuration)."

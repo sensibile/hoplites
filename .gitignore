@@ -1,0 +1,11 @@
+# Local outputs and secrets
+.env
+.env.*
+!.env.example
+artifacts/
+.cache/
+__pycache__/
+.DS_Store
+worktrees/
+.venv/
+.ruff_cache/

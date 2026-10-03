@@ -1,0 +1,7 @@
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+# Existing scripts retain their layout; catch syntax/name/control-flow errors.
+select = ["E9", "F63", "F7", "F82"]
