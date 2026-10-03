@@ -73,12 +73,16 @@ def checks(mode):
     formatter = ruff()
     if mode == "format":
         if changed:
-            subprocess.run([formatter, "format", *map(str, changed)], check=True, cwd=ROOT)
+            subprocess.run(
+                [formatter, "format", "--no-cache", *map(str, changed)], check=True, cwd=ROOT
+            )
         print("PASS: changed Python formatted; no staging performed")
         return
     if changed:
-        subprocess.run([formatter, "format", "--check", *map(str, changed)], check=True, cwd=ROOT)
-    subprocess.run([formatter, "check", *map(str, files)], check=True, cwd=ROOT)
+        subprocess.run(
+            [formatter, "format", "--check", "--no-cache", *map(str, changed)], check=True, cwd=ROOT
+        )
+    subprocess.run([formatter, "check", "--no-cache", *map(str, files)], check=True, cwd=ROOT)
     for path in files:
         ast.parse(path.read_text(), filename=str(path), feature_version=(3, 10))
     with sqlite3.connect(":memory:") as connection:

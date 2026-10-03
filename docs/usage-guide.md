@@ -86,6 +86,7 @@ python3 scripts/image_pipeline.py alpine:3.24 --trivy --upload
 | --- | --- |
 | `summary.json` | `status`, 원본·정규화 개수, `unresolved`, DT UUID, VEX 처리 요약 |
 | `image.json` | 입력 태그, 고정한 digest, 플랫폼 |
+| `scanners.json` | 스캐너의 고정 index/플랫폼 manifest digest와 실제 image ID |
 | `original.cdx.json` | 변경하지 않은 Syft 원본 |
 | `normalized.cdx.json` | 보강·정규화된 DT용 CycloneDX BOM |
 | `normalization-evidence.json` | 원본·결과·rootfs 해시, 적용 단계와 미해결 사항 |

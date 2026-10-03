@@ -37,6 +37,8 @@ python3 scripts/image_pipeline.py alpine:3.24 --trivy --upload
 
 `--trivy`는 Trivy 0.75.0을 `--scanners vuln,license --format cyclonedx`로 실행한다. 이 BOM은 비교 산출물이며 기본 DT 업로드 대상은 정규화된 Syft BOM이다. Trivy 결과를 DT finding으로 자동 합치지는 않는다. Syft/Trivy 컨테이너의 registry 접근은 현재 공개 이미지로 검증했고 private registry 자격증명 전달은 별도 어댑터가 필요하다.
 
+스캐너는 버전 태그와 함께 검토한 immutable index digest로 고정한다. 실행 플랫폼의 child manifest digest를 선택·pull하고 해당 digest로 실행하며, `scanners.json`에 index/child digest, 플랫폼, Docker image ID와 descriptor를 기록한다. 이 파일도 제출 번들에 포함한다. 런타임 보강은 패키지 DB 어댑터 선택 후 공통 단계로 실행하므로 APK 외 이미지에도 정확히 일치하는 release 규칙을 적용한다.
+
 제출 번들은 원본/정규화 BOM, 단계별 원본 변경/제외 근거, copyright/런타임 공지, 규칙 마이그레이션·스크립트, DT/VEX 변경 전후 및 CSV와 SHA-256 manifest를 포함한다. rootfs/image-save는 크기 때문에 별도 보존하고 해시로 연결한다. SQLite 실행 캐시는 원문 JSON과 SQL schema로 재생성 가능하며 제출 번들에는 바이너리 DB를 넣지 않는다.
 
 ## 새 이미지·버전을 추가하는 방법

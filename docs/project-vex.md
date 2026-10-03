@@ -1,5 +1,7 @@
 # 이미지 전체 검출의 배포판 VEX 처리
 
+미해결 advisory·identity·배포판 판정은 sidecar뿐 아니라 `in_triage` VEX로도 내보낸다. 재실행에서 근거가 없어졌을 때 이전 DT suppression이 남지 않도록 적용기가 suppression을 명시적으로 해제하고 분석 API로 확인한다. 미해결 내역은 계속 보고서에 유지한다.
+
 2026-10-03. `gnupg` 3건 실험을 Temurin 이미지의 DT 전체 검출로 확장했다. `codex/project-skeleton` 워크트리에서 수행했으며 기존 SBOM 구성요소/CPE는 유지했다.
 
 ## 결과
