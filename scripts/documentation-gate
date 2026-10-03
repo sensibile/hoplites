@@ -56,29 +56,60 @@ def changes(base, head):
     ]
 
 
+def container_content(line):
+    """Remove quote/list prefixes; preserve indentation inside each container."""
+    while True:
+        match = re.match(r"^ {0,3}(?:> ?|(?:[-+*]|[0-9]{1,9}[.)]) +)", line)
+        if not match:
+            return line
+        line = line[match.end() :]
+
+
+def markdown_sections(text):
+    """Conservative block scan: uncertain indentation takes the code path."""
+    outside, blocks, current = [], [], []
+    marker = None
+    for line in text.splitlines():
+        content = container_content(line)
+        # Extra indentation may be a list continuation or an indented code block.
+        match = re.match(r"^ *(`{3,}|~{3,})(.*)$", content)
+        if marker is not None:
+            current.append(line)
+            if (
+                match
+                and match.group(1)[0] == marker[0]
+                and len(match.group(1)) >= len(marker)
+                and not match.group(2).strip()
+            ):
+                blocks.append("\n".join(current))
+                current, marker = [], None
+        elif match:
+            marker, current = match.group(1), [line]
+        elif content.strip() and (content.startswith("    ") or line.startswith("    ")):
+            blocks.append(line)
+        else:
+            outside.append(line)
+    if marker is not None:
+        blocks.append("\n".join(current))
+    return outside, blocks, marker is not None
+
+
+def code_examples(text):
+    return markdown_sections(text)[1]
+
+
 def text_errors(path, text, entries):
     errors = []
     lines = text.splitlines()
-    if not text.strip() or not any(re.match(r"^# +\S", line) for line in lines):
-        errors.append("nonempty document with an H1 title required")
     if not text.endswith("\n") or "\r" in text or "\0" in text:
         errors.append("LF text with a final newline required")
-    fence = None
-    outside = []
+    outside, _, unclosed = markdown_sections(text)
+    if not text.strip() or not any(re.match(r"^# +\S", line) for line in outside):
+        errors.append("nonempty document with an H1 title required")
     for number, line in enumerate(lines, 1):
         if line.rstrip(" \t") != line or "\t" in line:
             errors.append(f"line {number}: trailing whitespace or tab")
-        match = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
-        if match:
-            marker, tail = match.groups()
-            if fence is None:
-                fence = marker
-            elif marker[0] == fence[0] and len(marker) >= len(fence) and not tail.strip():
-                fence = None
-            continue
-        if fence is None:
-            outside.append(line)
-    if fence is not None:
+    if unclosed:
         errors.append("unclosed fenced code block")
     # Inline and reference Markdown links. Remote URLs and anchors are not fetched.
     prose = "\n".join(outside)
@@ -98,30 +129,6 @@ def text_errors(path, text, entries):
         ):
             errors.append(f"missing local link: {target}")
     return [f"{path}: {error}" for error in errors]
-
-
-def fenced_examples(text):
-    blocks = []
-    current = []
-    marker = None
-    for line in text.splitlines():
-        match = re.match(r"^\s{0,3}(`{3,}|~{3,})(.*)$", line)
-        if marker is None and match:
-            marker = match.group(1)
-            current = [line]
-        elif marker is not None:
-            current.append(line)
-            if (
-                match
-                and match.group(1)[0] == marker[0]
-                and len(match.group(1)) >= len(marker)
-                and not match.group(2).strip()
-            ):
-                blocks.append("\n".join(current))
-                marker = None
-    if current and marker is not None:
-        blocks.append("\n".join(current))
-    return blocks
 
 
 def validate(base, head, inspect_history=True):
@@ -155,7 +162,7 @@ def validate(base, head, inspect_history=True):
                 if path in after
                 else ""
             )
-            if fenced_examples(previous) != fenced_examples(current):
+            if code_examples(previous) != code_examples(current):
                 only_docs = False
     # A deletion must not leave references to a removed document in unchanged docs.
     removed = {p for p in changed if doc_path(p) and p not in after}
@@ -163,11 +170,11 @@ def validate(base, head, inspect_history=True):
         for path, (mode, kind, oid) in after.items():
             if doc_path(path) and path not in changed and mode == "100644":
                 text = git_bytes("cat-file", "blob", oid).decode("utf-8")
+                previous_errors = set(text_errors(path, text, before))
                 errors.extend(
                     e
                     for e in text_errors(path, text, after)
-                    if "missing local link:" in e
-                    and any(posixpath.basename(p) in e for p in removed)
+                    if "missing local link:" in e and e not in previous_errors
                 )
     if errors:
         raise ValueError("\n".join(errors))

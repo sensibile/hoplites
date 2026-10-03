@@ -4,10 +4,30 @@
 import os
 from pathlib import Path
 import shutil
+import runpy
 import subprocess
 import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
+VALIDATOR = runpy.run_path(str(ROOT / "scripts/documentation-gate"))
+EXAMPLES = [
+    "> ```sh\n> echo old\n> ```\n",
+    "- ```sh\n  echo old\n  ```\n",
+    "1. ```sh\n   echo old\n   ```\n",
+    "> - ```sh\n>   echo old\n>   ```\n",
+    "    echo old\n",
+    ">     echo old\n",
+]
+for example in EXAMPLES:
+    assert VALIDATOR["code_examples"](example)
+    assert VALIDATOR["code_examples"](example) != VALIDATOR["code_examples"](
+        example.replace("old", "new")
+    )
+    assert not VALIDATOR["markdown_sections"](example)[2]
+assert any(
+    "H1" in error
+    for error in VALIDATOR["text_errors"]("README.md", "```sh\n# not a title\n```\nProse.\n", {})
+)
 
 
 def run(repo, *args, success=True):
@@ -71,6 +91,11 @@ with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
         ("docs/code", "code.py", "value = 2\n"),
         ("docs/example", "README.md", "# Readme\n```python\nvalue = 2\n```\n"),
     ]
+    failures += [
+        (f"docs/container-{number}", "README.md", "# Readme\n\n" + example)
+        for number, example in enumerate(EXAMPLES)
+    ]
+    failures.append(("docs/code-title", "README.md", "```sh\n# not a title\n```\nProse.\n"))
     for branch, name, content in failures:
         run(repo, "git", "switch", "-c", branch, base)
         (repo / name).write_text(content)
@@ -115,9 +140,57 @@ with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
     (repo / "README.md").write_text("# Readme\nDivergent prose replacement.\n")
     run(repo, "git", "add", "README.md")
     run(repo, "git", "commit", "-m", "docs: divergent replacement")
-    run(repo, "git", "push", "--force", "origin", "docs/divergent:docs/pass", success=False)
+    run(
+        repo,
+        "git",
+        "push",
+        "--force",
+        "origin",
+        "docs/divergent:docs/pass",
+        success=False,
+    )
     run(repo, "git", "push", "origin", "docs/pass:main", success=False)
     run(repo, "git", "push", "origin", "--delete", "docs/pass", success=False)
+    # Validate newly broken references even when the raw URL uses encoding or a directory.
+    run(repo, "git", "switch", "-c", "docs/link-fixture", base)
+    (repo / "docs" / "archive").mkdir(parents=True)
+    (repo / "docs" / "old guide.md").write_text("# Old guide\n")
+    (repo / "docs" / "archive" / "last.md").write_text("# Last\n")
+    (repo / "README.md").write_text(
+        "# Readme\n[Encoded](docs/old%20guide.md)\n[Directory](docs/archive/)\n"
+    )
+    run(repo, "git", "add", "README.md", "docs")
+    run(repo, "git", "commit", "-m", "docs: local link fixture")
+    link_base = run(repo, "git", "rev-parse", "HEAD")
+    for branch, path in [
+        ("docs/encoded-delete", "docs/old guide.md"),
+        ("docs/directory-delete", "docs/archive/last.md"),
+    ]:
+        run(repo, "git", "switch", "-c", branch, link_base)
+        (repo / path).unlink()
+        run(repo, "git", "add", path)
+        run(repo, "git", "commit", "-m", "docs: deletion with unchanged reference")
+        run(repo, "git", "push", "origin", branch, success=False)
+    # Another clone advances main to an object absent from the pushing repository.
+    other = folder / "other"
+    run(folder, "git", "clone", "--branch", "main", str(remote), str(other))
+    run(other, "git", "config", "user.name", "Other Clone")
+    run(other, "git", "config", "user.email", "other@example.invalid")
+    (other / "README.md").write_text("# Readme\nRemote main advance.\n")
+    run(other, "git", "add", "README.md")
+    run(other, "git", "commit", "-m", "docs: main advance in another clone")
+    remote_head = run(other, "git", "rev-parse", "HEAD")
+    run(other, "git", "push", "origin", "main")
+    run(repo, "git", "cat-file", "-e", remote_head + "^{commit}", success=False)
+    run(repo, "git", "switch", "-c", "docs/unseen-main", base)
+    (repo / "README.md").write_text("# Readme\nValid branch prose.\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: push after unseen remote advance")
+    fetch_head = repo / ".git" / "FETCH_HEAD"
+    previous_fetch = fetch_head.read_bytes() if fetch_head.exists() else None
+    run(repo, "git", "push", "origin", "docs/unseen-main")
+    run(repo, "git", "cat-file", "-e", remote_head + "^{commit}")
+    assert (fetch_head.read_bytes() if fetch_head.exists() else None) == previous_fetch
 print(
-    "PASS: two successive documentation pushes and 15 rejection paths in isolated real Git repositories"
+    "PASS: three documentation pushes and 24 rejection paths in isolated real Git repositories; container/indented examples, real H1 and deleted-link checks"
 )

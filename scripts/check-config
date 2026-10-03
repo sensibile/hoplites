@@ -98,6 +98,9 @@ def checks(mode):
     subprocess.run(
         [sys.executable, "-B", "-m", "unittest", "discover", "-s", "tests"], check=True, cwd=ROOT
     )
+    subprocess.run(
+        [sys.executable, str(ROOT / "scripts/test-documentation-gate")], check=True, cwd=ROOT
+    )
     print("PASS: formatting, static analysis, syntax, SQL, config, links and tests")
 
 
