@@ -36,7 +36,7 @@ python3 scripts/check-config
 ```
 
 4. 승인받은 commit은 한 의도로 만들고 `feat|fix|refactor|test|docs|chore:` 제목을 사용한다.
-5. push 승인 후 계획 → 보안 검사 → 독립 리뷰 → sealed 결과 등록 → push → PR 순서를 따른다. 상세 명령과 증적 형식은 [DEVELOPMENT.md](../DEVELOPMENT.md)에 있다.
+5. 코드·실행 설정 변경은 push 승인 후 계획 → 보안 검사 → 독립 리뷰 → sealed 결과 등록 → push → PR 순서를 따른다. 문서 전용 변경은 아래 구분을 따른다. 상세 명령과 증적 형식은 [DEVELOPMENT.md](../DEVELOPMENT.md)에 있다.
 
 `post-code`는 Git의 자동 이벤트가 아니다. 에이전트·편집기가 명시적으로 호출하며 자동 staging을 하지 않는다. 기존 Python 전체를 일괄 포맷하지 않고 현재 `HEAD` 대비 변경한 파일과 새 Python 파일만 처리한다.
 
@@ -79,3 +79,9 @@ python3 scripts/test-push-gate
 로컬 훅은 우회 가능하다. sealed 결과는 내용 일관성과 범위를 검사하며 모델 실행을 암호학적으로 증명하지 않는다. 독립 리뷰 JSON은 실제 리뷰어의 attestation이다. 외부 모델로 소스·요구사항·검증 근거를 전달하기 전 BOSS의 데이터 전달 승인을 확인한다.
 
 현재 main 서버 보호에는 required CI status나 required approving review를 추가하지 않았다. 가져온 Acropolis 서버 설정도 이 항목들은 비어 있었다. 서버 보호와 로컬 보안·독립 리뷰 gate의 보장 범위를 구분한다. CI·서버에서 동일 검사를 강제하는 작업은 별도다.
+
+## 문서 전용 작업
+
+실행 코드·테스트·빌드/배포 설정·의존성·migration·실행 가능한 보안 통제가 바뀌지 않는 문서 작업은 내용·로컬 링크·diff 확인으로 검증한다. AGENTS.md와 작업 지침·ADR도 문서 작업으로 구분한다. 보안 스캔과 독립 리뷰를 의무로 실행하지 않는다.
+
+현재 훅은 이 예외를 자동 판별하지 못하므로, 문서 전용 diff를 확인한 뒤에만 `git -c core.hooksPath=/dev/null push origin BRANCH`로 해당 push에 한정해 훅을 생략한다. 영구 Git 설정을 바꾸지 않으며 코드 변경에는 적용하지 않는다. 서버 main 보호와 PR 절차는 유지한다.
