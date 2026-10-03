@@ -7,3 +7,5 @@ artifacts/
 __pycache__/
 .DS_Store
 worktrees/
+.venv/
+.ruff_cache/

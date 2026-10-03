@@ -31,6 +31,7 @@ python3 scripts/image_pipeline.py eclipse-temurin:21-jre-noble --upload --vex
 
 ## 문서
 
+- [개발 작업 설정과 검사 절차](docs/development-workflow.md)
 - [사용 가이드: 준비부터 결과 확인·새 이미지 추가까지](docs/usage-guide.md)
 - [이미지 파이프라인](docs/image-pipeline.md)
 - [전체 범위 VEX](docs/project-vex.md)

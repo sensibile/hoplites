@@ -40,3 +40,24 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 - 스크립트로 충분한 처리 및 실험: Python.
 
 현재 목표, 실험 기준, 미검증 사항은 `docs/project-direction.md`와 관련 실험 문서를 따른다. 전체 배포 관리 시스템을 한 번에 구현하는 것으로 범위를 확대하지 않는다.
+
+## Development Policy
+
+- FC/IS: I/O, 환경, 시계, 난수, ID와 상태 변경은 shell에 격리한다. core는 명시적 입력으로 결과와 변경 의도를 반환한다. 기존 코드의 경계 개선은 해당 변경 범위에서 점진적으로 수행한다.
+- Mock 라이브러리는 기본적으로 사용하지 않는다. 실제 I/O는 격리 통합 테스트로 확인하며 fake는 실제 구현과 공통 계약 테스트를 적용한다. mock이 많이 필요하면 책임 경계를 재검토한다.
+- 코드 작성 후 `.githooks/post-code`를 명시적으로 실행한다. Git 표준 이벤트가 아니며 자동 stage하지 않는다. 포맷 후 diff를 확인한다.
+- pre-commit은 변경 Python의 포맷, 전체 Python 오류 중심 정적 분석·문법, SQL 마이그레이션, 설정·문서 링크, 테스트를 확인한다. 검사 중 파일/index를 수정하지 않는다. 무관한 기존 코드의 일괄 포맷을 섞지 않는다.
+- 구조 변경 디텍터는 연구 중이며 현재 필수 gate에 포함하지 않는다.
+- 한 커밋은 한 의도다. 제목은 `feat|fix|refactor|test|docs|chore: 변경 요약`을 사용한다. main 변경은 작업 브랜치와 PR을 거친다. 기본 squash merge이며 필요한 경우 단계 이력을 유지한다.
+- PR에 문제·변경 결과, 계약 변경, 검증 및 리뷰 SHA, 미실행 이유, 위험·복구를 기록한다. 문서는 `docs/`, 결정 기록은 `docs/adr/`에 누적한다.
+- 외부 모델로 소스·요구사항·검증 자료를 전달하기 전에 범위를 설명하고 BOSS의 승인을 받는다. 보안 검사와 독립 리뷰는 코드 수정·commit·push 권한을 갖지 않는다.
+- Linear 계획은 `plan-to-linear`, 명시적으로 승인한 티켓 구현은 `implement-linear-ticket`을 따른다. 티켓 생성이나 번호 언급만으로 구현을 시작하지 않는다.
+- 설치·검사 절차는 `docs/development-workflow.md`와 `DEVELOPMENT.md`를 따른다. 로컬 훅은 우회 가능하며 서버 정책을 대신하지 않는다.
+
+## Codex Push Preparation
+
+- push 요청 시 `./scripts/prepare-push origin BRANCH`로 원격/ref/main과 base/head가 고정된 계획을 만든다. 기존 브랜치도 누적 PR 범위를 검사한다. 준비 명령은 검사나 push를 실행하지 않는다.
+- 계획의 정확한 scan_base/head에 `$codex-security:security-diff-scan`의 전체 절차를 적용하고 sealed canonical 결과를 보존한다.
+- 같은 범위를 구현 대화 없이 독립 에이전트에게 리뷰시킨다. **push 준비 과정의 이 독립 리뷰에 한해 에이전트 실행을 명시적으로 허용한다.** 코드·요구사항·검증 근거만 전달하고 수정·commit·push 권한은 주지 않는다. 외부 모델 데이터 전달 승인 조건도 적용한다.
+- `./scripts/review-gate record PLAN_JSON COMPLETED_SCAN_DIR AGENT_JSON`으로 완료 결과를 등록한다. 수동 security pass, 범위 축소, 미해결 coverage, 취약점, 변경된 증적은 통과시키지 않는다.
+- 검사 뒤 head 또는 원격 main이 바뀌면 새 계획과 새 검사를 수행한다. 보안 검사와 독립 리뷰가 완료되지 않았다면 push가 준비됐다고 보고하지 않는다.
