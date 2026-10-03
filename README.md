@@ -50,6 +50,10 @@ python3 scripts/image_pipeline.py eclipse-temurin:21-jre-noble --upload --vex
 - [결과 계약](contracts/README.md)
 - [Dependency-Track 검토](docs/dependency-track.md)
 
+## 열린 이슈
+
+- [Simple Launcher의 관리·표시 단위](docs/open-issues/simple-launcher.md) — 처리 방침 미결정
+
 ## 저장소 구조
 
 - `adapters/`: 도구 실행 및 결과 변환
