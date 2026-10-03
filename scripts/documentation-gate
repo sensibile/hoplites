@@ -1,0 +1,227 @@
+#!/usr/bin/env python3
+"""Documentation policy v1: validate committed blobs without executing examples."""
+
+import argparse
+from pathlib import PurePosixPath
+import posixpath
+import re
+import subprocess
+import sys
+from urllib.parse import unquote, urlsplit
+
+POLICY_VERSION = 1
+TOP_DOCS = {
+    "AGENTS.md",
+    "DEVELOPMENT.md",
+    "README.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "CHANGELOG.md",
+    "DOCUMENTATION.md",
+}
+
+
+def git_bytes(*args):
+    return subprocess.check_output(["git", "--no-replace-objects", *args])
+
+
+def commit(value):
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", value):
+        raise ValueError("full commit SHA required")
+    return git_bytes("rev-parse", "--verify", value + "^{commit}").decode().strip()
+
+
+def tree(head):
+    entries = {}
+    for item in git_bytes("ls-tree", "-r", "-z", head).split(b"\0"):
+        if item:
+            meta, name = item.split(b"\t", 1)
+            mode, kind, oid = meta.decode().split()
+            entries[name.decode("utf-8")] = (mode, kind, oid)
+    return entries
+
+
+def doc_path(path):
+    parts = PurePosixPath(path).parts
+    return path in TOP_DOCS or (len(parts) > 1 and parts[0] == "docs" and path.endswith(".md"))
+
+
+def changes(base, head):
+    commit(base)
+    commit(head)
+    return [
+        p.decode("utf-8")
+        for p in git_bytes("diff", "--name-only", "--no-renames", "-z", base, head).split(b"\0")
+        if p
+    ]
+
+
+def container_content(line):
+    """Remove container prefixes, retaining all indentation after one separator."""
+    while True:
+        match = re.match(r"^ {0,3}(?:> ?|(?:[-+*]|[0-9]{1,9}[.)]) )", line)
+        if not match:
+            return line
+        line = line[match.end() :]
+
+
+def markdown_sections(text):
+    """Conservative block scan: uncertain indentation takes the code path."""
+    outside, blocks, current = [], [], []
+    indented, pending_blank = [], []
+    marker = None
+    for line in text.splitlines():
+        content = container_content(line)
+        is_indented = content.strip() and (content.startswith("    ") or line.startswith("    "))
+        if indented:
+            if not content.strip():
+                pending_blank.append(line)
+                continue
+            if is_indented:
+                indented.extend([*pending_blank, line])
+                pending_blank = []
+                continue
+            blocks.append("\n".join(indented))
+            outside.extend(pending_blank)
+            indented, pending_blank = [], []
+        # Extra indentation may be a list continuation or an indented code block.
+        match = re.match(r"^ *(`{3,}|~{3,})(.*)$", content)
+        if marker is not None:
+            current.append(line)
+            if (
+                match
+                and match.group(1)[0] == marker[0]
+                and len(match.group(1)) >= len(marker)
+                and not match.group(2).strip()
+            ):
+                blocks.append("\n".join(current))
+                current, marker = [], None
+        elif match:
+            marker, current = match.group(1), [line]
+        elif is_indented:
+            indented = [line]
+        else:
+            outside.append(line)
+    if marker is not None:
+        blocks.append("\n".join(current))
+    if indented:
+        blocks.append("\n".join(indented))
+    return outside, blocks, marker is not None
+
+
+def code_examples(text):
+    return markdown_sections(text)[1]
+
+
+def text_errors(path, text, entries):
+    errors = []
+    lines = text.splitlines()
+    if not text.endswith("\n") or "\r" in text or "\0" in text:
+        errors.append("LF text with a final newline required")
+    outside, _, unclosed = markdown_sections(text)
+    if not text.strip() or not any(re.match(r"^# +\S", line) for line in outside):
+        errors.append("nonempty document with an H1 title required")
+    for number, line in enumerate(lines, 1):
+        if line.rstrip(" \t") != line or "\t" in line:
+            errors.append(f"line {number}: trailing whitespace or tab")
+    if unclosed:
+        errors.append("unclosed fenced code block")
+    # Inline and reference Markdown links. Remote URLs and anchors are not fetched.
+    prose = "\n".join(container_content(line) for line in outside)
+    links = re.findall(r"!?\[[^\]]*\]\(\s*(<[^>]+>|[^\s)]+)", prose)
+    links += re.findall(r"^\s{0,3}\[[^\]]+\]:\s*(<[^>]+>|\S+)", prose, re.M)
+    for raw in links:
+        target = raw.strip("<>")
+        parsed = urlsplit(target)
+        if parsed.scheme or parsed.netloc or not parsed.path:
+            continue
+        decoded = unquote(parsed.path)
+        local = posixpath.normpath(posixpath.join(posixpath.dirname(path), decoded))
+        if decoded.startswith("/") or local == ".." or local.startswith("../"):
+            errors.append(f"nonportable local link: {target}")
+        elif local not in entries and not any(
+            p.startswith(local.rstrip("/") + "/") for p in entries
+        ):
+            errors.append(f"missing local link: {target}")
+    return [f"{path}: {error}" for error in errors]
+
+
+def validate(base, head, inspect_history=True):
+    changed = changes(base, head)
+    before, after = tree(base), tree(head)
+    only_docs = bool(changed) and all(
+        doc_path(p) and all(e is None or e[0] == "100644" for e in (before.get(p), after.get(p)))
+        for p in changed
+    )
+    errors = []
+    for path in changed:
+        if doc_path(path) and path in after:
+            mode, kind, oid = after[path]
+            if mode != "100644" or kind != "blob":
+                errors.append(f"{path}: regular non-executable document required")
+                continue
+            try:
+                text = git_bytes("cat-file", "blob", oid).decode("utf-8")
+                errors.extend(text_errors(path, text, after))
+            except UnicodeDecodeError:
+                errors.append(f"{path}: UTF-8 required")
+    if only_docs:
+        for path in changed:
+            previous = (
+                git_bytes("cat-file", "blob", before[path][2]).decode("utf-8")
+                if path in before
+                else ""
+            )
+            current = (
+                git_bytes("cat-file", "blob", after[path][2]).decode("utf-8")
+                if path in after
+                else ""
+            )
+            if code_examples(previous) != code_examples(current):
+                only_docs = False
+    # A deletion must not leave references to a removed document in unchanged docs.
+    removed = {p for p in changed if doc_path(p) and p not in after}
+    if removed:
+        for path, (mode, kind, oid) in after.items():
+            if doc_path(path) and path not in changed and mode == "100644":
+                text = git_bytes("cat-file", "blob", oid).decode("utf-8")
+                previous_errors = set(text_errors(path, text, before))
+                errors.extend(
+                    e
+                    for e in text_errors(path, text, after)
+                    if "missing local link:" in e and e not in previous_errors
+                )
+    if errors:
+        raise ValueError("\n".join(errors))
+    if only_docs and inspect_history:
+        commits = (
+            git_bytes("rev-list", "--reverse", "--parents", base + ".." + head)
+            .decode()
+            .splitlines()
+        )
+        for row in commits:
+            parts = row.split()
+            if len(parts) != 2 or not validate(parts[1], parts[0], inspect_history=False):
+                only_docs = False
+                break
+    return only_docs
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("base")
+    parser.add_argument("head")
+    parser.add_argument("--target-branch", default="main")
+    args = parser.parse_args()
+    only_docs = validate(args.base, args.head)
+    if only_docs and args.target_branch != "main":
+        raise ValueError("documentation automation requires main as PR target")
+    print(f"PASS: documentation policy v{POLICY_VERSION}; docs_only={only_docs}")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (ValueError, OSError, subprocess.CalledProcessError) as error:
+        print(f"BLOCKED: documentation gate: {error}", file=sys.stderr)
+        sys.exit(1)

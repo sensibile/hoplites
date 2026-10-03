@@ -10,7 +10,7 @@
 
 Before the first repository edit for a new task, read and apply `/Users/tonton/.codex/skills/worktree-first-dev/SKILL.md`.
 
-Create a dedicated worktree and task branch, or reuse the worktree already assigned to the same task, including one prepared by the app. Implement and validate there. Preserve existing uncommitted changes. Read-only review and planning do not require a new worktree. Explicit user instructions take precedence. Commit, push, and merge require the user's authorization.
+Create a dedicated worktree and task branch, or reuse the worktree already assigned to the same task, including one prepared by the app. Implement and validate there. Preserve existing uncommitted changes. Read-only review and planning do not require a new worktree. Explicit user instructions take precedence. Commit coherent validated changes at appropriate milestones without separate approval. For non-code tasks, complete push, PR creation and merge after documentation gates pass without separate approval. Code-task push and merge follow BOSS's authorization.
 
 ## CONFIDENTIAL
 
@@ -70,7 +70,7 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 
 - 문서만 변경한 작업은 내용 일관성, 로컬 링크와 `git diff --check`를 확인한다. 실행 코드·테스트·빌드/배포 설정·의존성·migration·실행 가능한 보안 통제가 바뀌지 않았으면 Codex Security와 독립 리뷰를 필수로 실행하지 않는다. AGENTS.md와 작업 절차·ADR 같은 지침 문서도 이 구분을 적용한다.
 - 코드 또는 실행 설정이 포함된 작업은 변경에 맞는 테스트와 아래 보안·독립 리뷰 절차를 적용한다. 파일 확장자만으로 문서 전용이라고 판단하지 않는다.
-- 현재 pre-push 훅은 문서 전용 예외를 자동 판별하지 못한다. 문서 전용 diff를 확인한 경우에만 `git -c core.hooksPath=/dev/null push origin BRANCH`로 해당 push의 로컬 훅을 생략할 수 있다. 영구 hooksPath 변경이나 코드 변경의 gate 생략에는 적용하지 않는다. PR/원격 상태 확인과 main 보호는 유지한다.
+- 문서 전용 변경은 누적 PR 범위를 pre-push 문서 gate와 GitHub documentation-policy로 검증한다. hooksPath 우회는 허용하지 않는다. 검증 통과 후 PR·merge까지 진행한다.
 
 ## Codex Push Preparation
 
@@ -81,3 +81,9 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 - 같은 범위를 구현 대화 없이 독립 에이전트에게 리뷰시킨다. **push 준비 과정의 이 독립 리뷰에 한해 에이전트 실행을 명시적으로 허용한다.** 코드·요구사항·검증 근거만 전달하고 수정·commit·push 권한은 주지 않는다. 외부 모델 데이터 전달 승인 조건도 적용한다.
 - `./scripts/review-gate record PLAN_JSON COMPLETED_SCAN_DIR AGENT_JSON`으로 완료 결과를 등록한다. 수동 security pass, 범위 축소, 미해결 coverage, 취약점, 변경된 증적은 통과시키지 않는다.
 - 검사 뒤 head 또는 원격 main이 바뀌면 새 계획과 새 검사를 수행한다. 보안 검사와 독립 리뷰가 완료되지 않았다면 push가 준비됐다고 보고하지 않는다.
+
+## 공통 문서 gate 및 브랜치 정책
+
+- 새 브랜치는 `feat|fix|refactor|test|docs|chore` 중 작업 의도에 맞는 `<type>/<short-task-slug>`를 사용한다. `codex/` 기본값보다 우선한다.
+- [문서 작업 규칙](docs/documentation-policy.md)을 적용한다. 문서 전용 작업은 문서 gate를 통과하면 코드·독립·보안 리뷰를 생략한다. 코드 또는 실행 설정 변경이 섞이면 기존 리뷰 절차를 적용한다.
+- 문서 gate 구현·변경 자체는 코드 작업이다. 자동 commit 권한이 코드 push·merge나 실패한 gate 우회를 허용하지 않는다.

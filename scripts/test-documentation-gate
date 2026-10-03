@@ -1,0 +1,233 @@
+#!/usr/bin/env python3
+"""Real Git integration checks for documentation exemptions and mixed changes."""
+
+import os
+from pathlib import Path
+import shutil
+import runpy
+import subprocess
+import tempfile
+
+ROOT = Path(__file__).resolve().parents[1]
+VALIDATOR = runpy.run_path(str(ROOT / "scripts/documentation-gate"))
+EXAMPLES = [
+    "> ```sh\n> echo old\n> ```\n",
+    "- ```sh\n  echo old\n  ```\n",
+    "1. ```sh\n   echo old\n   ```\n",
+    "> - ```sh\n>   echo old\n>   ```\n",
+    "    echo old\n",
+    ">     echo old\n",
+]
+for example in EXAMPLES:
+    assert VALIDATOR["code_examples"](example)
+    assert VALIDATOR["code_examples"](example) != VALIDATOR["code_examples"](
+        example.replace("old", "new")
+    )
+    assert not VALIDATOR["markdown_sections"](example)[2]
+assert any(
+    "H1" in error
+    for error in VALIDATOR["text_errors"]("README.md", "```sh\n# not a title\n```\nProse.\n", {})
+)
+
+
+def run(repo, *args, success=True):
+    env = os.environ.copy()
+    for key in subprocess.check_output(
+        ["git", "rev-parse", "--local-env-vars"], text=True
+    ).splitlines():
+        env.pop(key, None)
+    result = subprocess.run(args, cwd=repo, env=env, capture_output=True, text=True)
+    if (result.returncode == 0) != success:
+        raise AssertionError(result.stdout + result.stderr)
+    return result.stdout.strip()
+
+
+with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
+    folder = Path(folder).resolve()
+    repo, remote = folder / "repo", folder / "remote.git"
+    run(folder, "git", "init", "--bare", str(remote))
+    run(folder, "git", "init", "-b", "main", str(repo))
+    run(repo, "git", "config", "user.name", "Gate Test")
+    run(repo, "git", "config", "user.email", "gate@example.invalid")
+    run(repo, "git", "config", "core.hooksPath", str(repo / ".githooks"))
+    (repo / "README.md").write_text("# Readme\n\nInitial documentation.\n")
+    (repo / "code.py").write_text("value = 1\n")
+    (repo / "scripts").mkdir()
+    for name in ("review-gate", "documentation-gate"):
+        shutil.copy2(ROOT / "scripts" / name, repo / "scripts" / name)
+    run(repo, "git", "add", ".")
+    run(repo, "git", "commit", "-m", "chore: fixture baseline")
+    base = run(repo, "git", "rev-parse", "HEAD")
+    run(repo, "git", "remote", "add", "origin", str(remote))
+    run(repo, "git", "push", "origin", "main")
+    (repo / ".githooks").mkdir()
+    shutil.copy2(ROOT / ".githooks/pre-push", repo / ".githooks/pre-push")
+    run(repo, "git", "switch", "-c", "docs/pass")
+    (repo / "README.md").write_text("# Readme\n\nUpdated [source](code.py).\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: valid text")
+    # A real push succeeds without fabricated security or independent evidence.
+    run(repo, "git", "push", "-u", "origin", "docs/pass")
+    (repo / "README.md").write_text("# Readme\n\nSecond prose push [source](code.py).\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: follow-up prose")
+    run(repo, "git", "push")
+    passed_head = run(repo, "git", "rev-parse", "HEAD")
+    run(
+        repo,
+        "python3",
+        "scripts/documentation-gate",
+        base,
+        passed_head,
+        "--target-branch",
+        "release",
+        success=False,
+    )
+    failures = [
+        ("docs/whitespace", "README.md", "# Readme\nBad text  \n"),
+        ("docs/link", "README.md", "# Readme\n[Missing](absent.md)\n"),
+        ("docs/fence", "README.md", "# Readme\n```python\nvalue = 2\n"),
+        ("docs/title", "README.md", "Missing title\n"),
+        ("docs/code", "code.py", "value = 2\n"),
+        ("docs/example", "README.md", "# Readme\n```python\nvalue = 2\n```\n"),
+    ]
+    failures += [
+        (f"docs/container-{number}", "README.md", "# Readme\n\n" + example)
+        for number, example in enumerate(EXAMPLES)
+    ]
+    failures.append(("docs/code-title", "README.md", "```sh\n# not a title\n```\nProse.\n"))
+    for branch, name, content in failures:
+        run(repo, "git", "switch", "-c", branch, base)
+        (repo / name).write_text(content)
+        run(repo, "git", "add", name)
+        run(repo, "git", "commit", "-m", "test: rejected change")
+        run(repo, "git", "push", "origin", branch, success=False)
+    run(repo, "git", "switch", "-c", "docs/mixed", base)
+    (repo / "code.py").write_text("value = 3\n")
+    run(repo, "git", "add", "code.py")
+    run(repo, "git", "commit", "-m", "fix: earlier code change")
+    (repo / "README.md").write_text("# Readme\nLater prose change.\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: later prose")
+    run(repo, "git", "push", "origin", "docs/mixed", success=False)
+    # The last commit being docs-only cannot hide prior code in the PR range.
+    run(repo, "git", "switch", "-c", "docs/transient-code", base)
+    (repo / "code.py").write_text("temporary_secret = 1\n")
+    run(repo, "git", "add", "code.py")
+    run(repo, "git", "commit", "-m", "fix: transient code")
+    (repo / "code.py").write_text("value = 1\n")
+    (repo / "README.md").write_text("# Readme\nOnly prose at final head.\n")
+    run(repo, "git", "add", "code.py", "README.md")
+    run(repo, "git", "commit", "-m", "docs: restore code and update prose")
+    run(repo, "git", "push", "origin", "docs/transient-code", success=False)
+    run(repo, "git", "switch", "-c", "docs/mode", base)
+    (repo / "README.md").chmod(0o755)
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: executable documentation")
+    run(repo, "git", "push", "origin", "docs/mode", success=False)
+    run(repo, "git", "switch", "-c", "docs/symlink", base)
+    (repo / "README.md").unlink()
+    (repo / "README.md").symlink_to("code.py")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: symlink documentation")
+    run(repo, "git", "push", "origin", "docs/symlink", success=False)
+    run(repo, "git", "switch", "-c", "docs/delete", passed_head)
+    (repo / "code.py").unlink()
+    run(repo, "git", "add", "code.py")
+    run(repo, "git", "commit", "-m", "test: code deletion")
+    run(repo, "git", "push", "origin", "docs/delete", success=False)
+    run(repo, "git", "switch", "-c", "docs/divergent", base)
+    (repo / "README.md").write_text("# Readme\nDivergent prose replacement.\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: divergent replacement")
+    run(
+        repo,
+        "git",
+        "push",
+        "--force",
+        "origin",
+        "docs/divergent:docs/pass",
+        success=False,
+    )
+    run(repo, "git", "push", "origin", "docs/pass:main", success=False)
+    run(repo, "git", "push", "origin", "--delete", "docs/pass", success=False)
+    # Validate newly broken references even when the raw URL uses encoding or a directory.
+    run(repo, "git", "switch", "-c", "docs/link-fixture", base)
+    (repo / "docs" / "archive").mkdir(parents=True)
+    (repo / "docs" / "old guide.md").write_text("# Old guide\n")
+    (repo / "docs" / "archive" / "last.md").write_text("# Last\n")
+    (repo / "README.md").write_text(
+        "# Readme\n[Encoded](docs/old%20guide.md)\n[Directory](docs/archive/)\n"
+    )
+    run(repo, "git", "add", "README.md", "docs")
+    run(repo, "git", "commit", "-m", "docs: local link fixture")
+    link_base = run(repo, "git", "rev-parse", "HEAD")
+    for branch, path in [
+        ("docs/encoded-delete", "docs/old guide.md"),
+        ("docs/directory-delete", "docs/archive/last.md"),
+    ]:
+        run(repo, "git", "switch", "-c", branch, link_base)
+        (repo / path).unlink()
+        run(repo, "git", "add", path)
+        run(repo, "git", "commit", "-m", "docs: deletion with unchanged reference")
+        run(repo, "git", "push", "origin", branch, success=False)
+    # A blank line inside a shell heredoc is executable input, not prose.
+    run(repo, "git", "switch", "-c", "docs/indented-fixture", base)
+    heredoc = "# Readme\n\n    cat <<'EOF'\n    first\n\n    second\n    EOF\n"
+    (repo / "README.md").write_text(heredoc)
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: indented heredoc baseline")
+    indented_base = run(repo, "git", "rev-parse", "HEAD")
+    (repo / "README.md").write_text(heredoc.replace("first\n\n", "first\n"))
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: change heredoc input")
+    indented_head = run(repo, "git", "rev-parse", "HEAD")
+    verdict = run(repo, "python3", "scripts/documentation-gate", indented_base, indented_head)
+    assert "docs_only=False" in verdict
+    run(repo, "git", "push", "origin", "docs/indented-fixture", success=False)
+    # A list marker followed by five spaces opens indented code in that item.
+    run(repo, "git", "switch", "-c", "docs/list-indented-fixture", base)
+    list_code = "# Readme\n\n-     cat <<'EOF'\n      first\n\n      second\n      EOF\n"
+    (repo / "README.md").write_text(list_code)
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: list-indented example baseline")
+    list_base = run(repo, "git", "rev-parse", "HEAD")
+    (repo / "README.md").write_text(list_code.replace("cat <<", "printf <<"))
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: change opening list-code command")
+    list_head = run(repo, "git", "rev-parse", "HEAD")
+    verdict = run(repo, "python3", "scripts/documentation-gate", list_base, list_head)
+    assert "docs_only=False" in verdict
+    run(repo, "git", "push", "origin", "docs/list-indented-fixture", success=False)
+    # Reference definitions in Markdown containers remain repository-local links.
+    run(repo, "git", "switch", "-c", "docs/quoted-reference", link_base)
+    (repo / "README.md").write_text("# Readme\n> [Guide][g]\n> [g]: docs/old%20guide.md\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: quoted reference baseline")
+    (repo / "docs" / "old guide.md").unlink()
+    run(repo, "git", "add", "docs/old guide.md")
+    run(repo, "git", "commit", "-m", "test: deletion behind quoted reference")
+    run(repo, "git", "push", "origin", "docs/quoted-reference", success=False)
+    # Another clone advances main to an object absent from the pushing repository.
+    other = folder / "other"
+    run(folder, "git", "clone", "--branch", "main", str(remote), str(other))
+    run(other, "git", "config", "user.name", "Other Clone")
+    run(other, "git", "config", "user.email", "other@example.invalid")
+    (other / "README.md").write_text("# Readme\nRemote main advance.\n")
+    run(other, "git", "add", "README.md")
+    run(other, "git", "commit", "-m", "docs: main advance in another clone")
+    remote_head = run(other, "git", "rev-parse", "HEAD")
+    run(other, "git", "push", "origin", "main")
+    run(repo, "git", "cat-file", "-e", remote_head + "^{commit}", success=False)
+    run(repo, "git", "switch", "-c", "docs/unseen-main", base)
+    (repo / "README.md").write_text("# Readme\nValid branch prose.\n")
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "docs: push after unseen remote advance")
+    fetch_head = repo / ".git" / "FETCH_HEAD"
+    previous_fetch = fetch_head.read_bytes() if fetch_head.exists() else None
+    run(repo, "git", "push", "origin", "docs/unseen-main")
+    run(repo, "git", "cat-file", "-e", remote_head + "^{commit}")
+    assert (fetch_head.read_bytes() if fetch_head.exists() else None) == previous_fetch
+print(
+    "PASS: three documentation pushes and 27 rejection paths in isolated real Git repositories; container/indented examples including heredoc blank lines, real H1 and deleted-link checks"
+)
