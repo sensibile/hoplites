@@ -91,7 +91,7 @@ def process(bom, rootfs, aliases):
     with tarfile.open(rootfs) as tar:
         members = {m.name.lstrip("./"): m for m in tar.getmembers()}
 
-        def read(path):
+        def read(path, follow_leaf=True):
             path = path.lstrip("/")
             for _ in range(40):
                 m = members.get(path)
@@ -113,6 +113,8 @@ def process(bom, rootfs, aliases):
                 if m.isfile():
                     return tar.extractfile(m).read(), path
                 if m.issym():
+                    if not follow_leaf:
+                        raise ValueError("Leaf symlink does not establish target ownership")
                     path = posixpath.normpath(
                         posixpath.join(posixpath.dirname(path), m.linkname)
                     ).lstrip("/")
@@ -152,6 +154,7 @@ def process(bom, rootfs, aliases):
         if set(packages) != set(installed):
             raise ValueError("SBOM and installed dpkg package set mismatch")
         owners = {}
+        resolved_owners = {}
         for key, package in packages.items():
             name, arch = key
             if package["version"] != installed[key]["Version"]:
@@ -164,6 +167,11 @@ def process(bom, rootfs, aliases):
             source_docs[resolved] = raw
             for path in raw.decode().splitlines():
                 owners.setdefault(path, []).append(key)
+                try:
+                    _, canonical = read(path, follow_leaf=False)
+                except ValueError:
+                    continue
+                resolved_owners.setdefault("/" + canonical, set()).add(key)
             copyright_path = f"usr/share/doc/{name}/copyright"
             try:
                 copyright_raw, resolved = read(copyright_path)
@@ -336,7 +344,9 @@ def process(bom, rootfs, aliases):
             hashes = [h["content"] for h in c.get("hashes", []) if h["alg"] == "SHA-256"]
             if hashes != [sha(raw)]:
                 continue
-            candidate = owners.get(path, [])
+            candidate = sorted(
+                set(owners.get(path, [])) | resolved_owners.get("/" + resolved, set())
+            )
             owner = None
             kind = None
             if len(candidate) == 1:

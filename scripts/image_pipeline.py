@@ -22,6 +22,7 @@ from pathlib import Path
 from enrich_syft_apk import enrich as apk_enrich
 from normalize_syft_bom import normalize as package_view
 from enrich_runtime_bom import enrich as runtime_enrich
+from normalize_node_bom import process as node_view, archive_files as node_files
 from normalize_platform_metadata import read_layers, normalize as platform_view
 from normalize_debian_bom import process as debian_view
 from audit_erlang_licenses import archive_files, audit
@@ -340,6 +341,16 @@ class Pipeline:
                 }
             )
         bom = self.runtime(bom, rootfs, ref, db)
+        if any(c.get("purl", "").startswith("pkg:generic/node@") for c in bom["components"]):
+            bom, report, sources = node_view(bom, node_files(rootfs))
+            for path, raw in sources.items():
+                dest = self.out / "sources/node" / path
+                if not dest.resolve().is_relative_to((self.out / "sources/node").resolve()):
+                    raise ValueError("Unsafe Node source path")
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(raw)
+            self.stage("node-package-view", bom, report)
+            self.pending.extend(report["unresolved"])
         for c in bom["components"]:
             if c.get("type") == "file":
                 self.pending.append(
