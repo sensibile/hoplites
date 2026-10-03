@@ -57,9 +57,9 @@ def changes(base, head):
 
 
 def container_content(line):
-    """Remove quote/list prefixes; preserve indentation inside each container."""
+    """Remove container prefixes, retaining all indentation after one separator."""
     while True:
-        match = re.match(r"^ {0,3}(?:> ?|(?:[-+*]|[0-9]{1,9}[.)]) +)", line)
+        match = re.match(r"^ {0,3}(?:> ?|(?:[-+*]|[0-9]{1,9}[.)]) )", line)
         if not match:
             return line
         line = line[match.end() :]

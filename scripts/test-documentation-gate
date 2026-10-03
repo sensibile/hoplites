@@ -185,6 +185,20 @@ with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
     verdict = run(repo, "python3", "scripts/documentation-gate", indented_base, indented_head)
     assert "docs_only=False" in verdict
     run(repo, "git", "push", "origin", "docs/indented-fixture", success=False)
+    # A list marker followed by five spaces opens indented code in that item.
+    run(repo, "git", "switch", "-c", "docs/list-indented-fixture", base)
+    list_code = "# Readme\n\n-     cat <<'EOF'\n      first\n\n      second\n      EOF\n"
+    (repo / "README.md").write_text(list_code)
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: list-indented example baseline")
+    list_base = run(repo, "git", "rev-parse", "HEAD")
+    (repo / "README.md").write_text(list_code.replace("cat <<", "printf <<"))
+    run(repo, "git", "add", "README.md")
+    run(repo, "git", "commit", "-m", "test: change opening list-code command")
+    list_head = run(repo, "git", "rev-parse", "HEAD")
+    verdict = run(repo, "python3", "scripts/documentation-gate", list_base, list_head)
+    assert "docs_only=False" in verdict
+    run(repo, "git", "push", "origin", "docs/list-indented-fixture", success=False)
     # Reference definitions in Markdown containers remain repository-local links.
     run(repo, "git", "switch", "-c", "docs/quoted-reference", link_base)
     (repo / "README.md").write_text("# Readme\n> [Guide][g]\n> [g]: docs/old%20guide.md\n")
@@ -215,5 +229,5 @@ with tempfile.TemporaryDirectory(prefix="documentation-gate-") as folder:
     run(repo, "git", "cat-file", "-e", remote_head + "^{commit}")
     assert (fetch_head.read_bytes() if fetch_head.exists() else None) == previous_fetch
 print(
-    "PASS: three documentation pushes and 26 rejection paths in isolated real Git repositories; container/indented examples including heredoc blank lines, real H1 and deleted-link checks"
+    "PASS: three documentation pushes and 27 rejection paths in isolated real Git repositories; container/indented examples including heredoc blank lines, real H1 and deleted-link checks"
 )
