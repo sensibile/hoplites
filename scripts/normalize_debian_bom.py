@@ -32,9 +32,11 @@ def fields(text):
     return result
 
 
-def license_expression(label, aliases, package, doc_hash, refs):
+def license_expression(label, aliases, package, doc_hash, refs, reviewed=None):
     # Explicit relationships only; retain ambiguous complete labels as LicenseRef terms.
     label = label.strip()
+    if reviewed and (doc_hash, label) in reviewed:
+        return reviewed[(doc_hash, label)]
     if re.search(r"\band/or\b|[(),~]", label, re.I):
         parts = None
     else:
@@ -43,7 +45,7 @@ def license_expression(label, aliases, package, doc_hash, refs):
         return " ".join(
             part.upper()
             if i % 2
-            else "(" + license_expression(part, aliases, package, doc_hash, refs) + ")"
+            else "(" + license_expression(part, aliases, package, doc_hash, refs, reviewed) + ")"
             for i, part in enumerate(parts)
         )
     if label.lower() in aliases:
@@ -75,7 +77,7 @@ def license_expression(label, aliases, package, doc_hash, refs):
     return identifier
 
 
-def process(bom, rootfs, aliases):
+def process(bom, rootfs, aliases, reviewed=None):
     result = copy.deepcopy(bom)
     for component in result["components"]:
         component["properties"] = [
@@ -194,7 +196,10 @@ def process(bom, rootfs, aliases):
             if not labels:
                 labels = ["Full-copyright-document"]
             expressions = sorted(
-                {license_expression(l, aliases, name, doc_hash, license_refs) for l in labels}
+                {
+                    license_expression(l, aliases, name, doc_hash, license_refs, reviewed)
+                    for l in labels
+                }
             )
             expression = " AND ".join("(" + e + ")" if " " in e else e for e in expressions)
             before = copy.deepcopy(package.get("licenses"))
@@ -318,6 +323,33 @@ def process(bom, rootfs, aliases):
                         "value": "inferred-from-JRE-distribution; module-source-header-verification-pending",
                     }
                 )
+
+        # dpkg may list /bin while Syft reports /usr/bin on usrmerged images.
+        # Resolve through the actual rootfs links; never assume a prefix alias.
+        def parent_resolved(path):
+            path = path.lstrip("/")
+            for _ in range(40):
+                parts = path.split("/")
+                for i in range(1, len(parts)):
+                    prefix = "/".join(parts[:i])
+                    parent = members.get(prefix)
+                    if parent and parent.issym():
+                        path = posixpath.normpath(
+                            posixpath.join(posixpath.dirname(prefix), parent.linkname, *parts[i:])
+                        ).lstrip("/")
+                        break
+                else:
+                    return path
+            raise ValueError("Parent symlink loop")
+
+        resolved_owners = {}
+        for listed_path, keys in owners.items():
+            canonical = parent_resolved(listed_path)
+            leaf = members.get(canonical)
+            # A package owns its leaf symlink, not the bytes of another package's target.
+            if leaf is None or not leaf.isfile():
+                continue
+            resolved_owners.setdefault(canonical, set()).update(keys)
         os = next(c for c in result["components"] if c["type"] == "operating-system")
         os.setdefault("properties", []).append(
             {
@@ -336,12 +368,12 @@ def process(bom, rootfs, aliases):
             hashes = [h["content"] for h in c.get("hashes", []) if h["alg"] == "SHA-256"]
             if hashes != [sha(raw)]:
                 continue
-            candidate = owners.get(path, [])
+            candidate = sorted(set(owners.get(path, [])) | resolved_owners.get(resolved, set()))
             owner = None
             kind = None
             if len(candidate) == 1:
                 owner = packages[candidate[0]]
-                kind = "dpkg-file-list"
+                kind = "dpkg-file-list-rootfs-resolved"
             elif path.startswith("/var/lib/dpkg/info/"):
                 control = Path(path).name.rsplit(".", 1)
                 identity = control[0].split(":", 1)
@@ -424,7 +456,11 @@ def main():
         db.executescript(f.read_text())
     aliases = dict(db.execute("SELECT label,spdx_expression FROM debian_license_alias"))
     raw = args.sbom.read_bytes()
-    result, report, sources = process(json.loads(raw), args.rootfs, aliases)
+    reviewed = {
+        (r[0], r[1]): r[2]
+        for r in db.execute("SELECT copyright_sha256,label,expression FROM debian_reviewed_license")
+    }
+    result, report, sources = process(json.loads(raw), args.rootfs, aliases, reviewed)
     output = (json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode()
     report.update(
         input_sha256=sha(raw),
