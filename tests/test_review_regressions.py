@@ -1,9 +1,11 @@
 import copy
+import csv
 import hashlib
 import io
 import json
 from pathlib import Path
 import sys
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -22,6 +24,198 @@ def archive(path, files):
 
 
 class ReviewRegressions(unittest.TestCase):
+    def test_debian_csv_quotes_supplier_reference_after_verified_replay(self):
+        scripts = Path(__file__).parents[1] / "scripts"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive(
+                root / "rootfs.tar",
+                {
+                    "var/lib/dpkg/status": b"Package: pkg\nStatus: install ok installed\nVersion: 1\nArchitecture: arm64\n",
+                    "var/lib/dpkg/info/pkg.list": b"/usr/bin/a\n",
+                    "usr/bin/a": b"abc",
+                    "usr/share/doc/pkg/copyright": b"Files: *\nLicense: Expat\n",
+                },
+            )
+            original = {
+                "components": [
+                    {
+                        "bom-ref": "pkg",
+                        "name": "pkg",
+                        "version": "1",
+                        "type": "library",
+                        "purl": "pkg:deb/ubuntu/pkg@1",
+                    },
+                    {
+                        "bom-ref": "os",
+                        "name": "ubuntu",
+                        "version": "24.04",
+                        "type": "operating-system",
+                    },
+                    {
+                        "bom-ref": "=1+1",
+                        "name": "/usr/bin/a",
+                        "type": "file",
+                        "hashes": [
+                            {"alg": "SHA-256", "content": hashlib.sha256(b"abc").hexdigest()}
+                        ],
+                    },
+                ]
+            }
+            db = database()
+            self.addCleanup(db.close)
+            bom, report, sources = process(
+                original,
+                root / "rootfs.tar",
+                dict(db.execute("SELECT label,spdx_expression FROM debian_license_alias")),
+            )
+            (root / "syft.cdx.json").write_text(json.dumps(original))
+            (root / "normalized-v2.cdx.json").write_text(json.dumps(bom))
+            report.update(
+                input_sha256=hashlib.sha256((root / "syft.cdx.json").read_bytes()).hexdigest(),
+                output_sha256=hashlib.sha256(
+                    (root / "normalized-v2.cdx.json").read_bytes()
+                ).hexdigest(),
+                rootfs_sha256=hashlib.sha256((root / "rootfs.tar").read_bytes()).hexdigest(),
+            )
+            (root / "normalization-v2-evidence.json").write_text(json.dumps(report))
+            for path, raw in sources.items():
+                target = root / "normalization-v2-sources" / path
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(raw)
+            for name in [
+                "trivy.cdx.json",
+                "image-ref.txt",
+                "image-inspect.json",
+                "Dockerfile.upstream",
+                "dt-upload.json",
+                "dt-verification.json",
+                "syft-run.json",
+                "trivy-run.json",
+            ]:
+                (root / name).write_text("{}")
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(scripts / "build_debian_evidence_bundle.py"),
+                    "--experiment",
+                    str(root),
+                    "--output-dir",
+                    str(root / "bundle"),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            with (root / "bundle/excluded-files.csv").open() as stream:
+                rows = list(csv.reader(stream))
+            self.assertEqual(rows[1][1], "'=1+1")
+            self.assertEqual(json.loads((root / "bundle/syft.cdx.json").read_bytes()), original)
+            self.assertTrue((root / "bundle/scripts/build_evidence_bundle.py").exists())
+
+    def test_empty_dt_export_without_arrays_through_collector_and_builder(self):
+        scripts = Path(__file__).parents[1] / "scripts"
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            export = {
+                "bomFormat": "CycloneDX",
+                "specVersion": "1.5",
+                "metadata": {"component": {"bom-ref": "project", "version": "sha256:abc"}},
+            }
+            sbom = {"metadata": {"component": {"version": "sha256:abc"}}, "components": []}
+            (root / "export.json").write_text(json.dumps(export))
+            (root / "sbom.json").write_text(json.dumps(sbom))
+            archive(
+                root / "rootfs.tar",
+                {
+                    "var/lib/dpkg/status": b"",
+                    "usr/lib/os-release": b'ID=ubuntu\nVERSION_ID="24.04"\n',
+                },
+            )
+            (root / "evidence.json").write_text(
+                json.dumps(
+                    {
+                        "rootfs_sha256": hashlib.sha256(
+                            (root / "rootfs.tar").read_bytes()
+                        ).hexdigest(),
+                        "output_sha256": hashlib.sha256(
+                            (root / "sbom.json").read_bytes()
+                        ).hexdigest(),
+                    }
+                )
+            )
+            (root / "reviewed").mkdir()
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(scripts / "collect_project_advisories.py"),
+                    "--export",
+                    str(root / "export.json"),
+                    "--output-dir",
+                    str(root / "snapshot"),
+                    "--cache",
+                    str(root / "cache.sqlite"),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(scripts / "build_project_vex.py"),
+                    "--export",
+                    str(root / "export.json"),
+                    "--sbom",
+                    str(root / "sbom.json"),
+                    "--normalization-evidence",
+                    str(root / "evidence.json"),
+                    "--rootfs",
+                    str(root / "rootfs.tar"),
+                    "--index",
+                    str(root / "snapshot/advisory-index.json"),
+                    "--sources",
+                    str(root / "snapshot/advisories"),
+                    "--reviewed-sources",
+                    str(root / "reviewed"),
+                    "--output",
+                    str(root / "vex.json"),
+                    "--evidence",
+                    str(root / "decisions.json"),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            self.assertEqual(json.loads((root / "vex.json").read_bytes())["vulnerabilities"], [])
+            self.assertEqual(
+                json.loads((root / "decisions.json").read_bytes())["coverage"]["finding_pairs"], 0
+            )
+
+    def test_submission_csv_quotes_formula_and_preserves_original_json(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            original = {"components": [{"bom-ref": "=1+1", "name": "=1+1", "type": "file"}]}
+            bom = {"components": []}
+            for name in [
+                "original.cdx.json",
+                "normalized.cdx.json",
+                "normalization-evidence.json",
+                "image.json",
+                "commands.json",
+                "summary.json",
+            ]:
+                (root / name).write_text(
+                    json.dumps(original if name == "original.cdx.json" else bom)
+                )
+            (root / "rootfs.tar").write_bytes(b"rootfs")
+            (root / "image-save.tar").write_bytes(b"image")
+            Pipeline(root, root / "cache").bundle(original, bom)
+            with (root / "submission/excluded-components.csv").open() as stream:
+                rows = list(csv.reader(stream))
+            self.assertEqual(rows[1][:2], ["'=1+1", "'=1+1"])
+            self.assertEqual(rows[1][3], "")
+            self.assertEqual(
+                json.loads((root / "submission/original.cdx.json").read_bytes()), original
+            )
+
     def test_multiarch_packages_licenses_and_ownership(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

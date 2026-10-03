@@ -25,6 +25,7 @@ from enrich_runtime_bom import enrich as runtime_enrich
 from normalize_platform_metadata import read_layers, normalize as platform_view
 from normalize_debian_bom import process as debian_view
 from audit_erlang_licenses import archive_files, audit
+from build_evidence_bundle import safe_csv
 
 ROOT = Path(__file__).resolve().parents[1]
 SYFT = (
@@ -391,14 +392,22 @@ class Pipeline:
             for c in removed.values():
                 w.writerow(
                     [
-                        c["bom-ref"],
-                        c["name"],
-                        c["type"],
-                        c.get("version"),
-                        next(
-                            (h["content"] for h in c.get("hashes", []) if h["alg"] == "SHA-256"), ""
-                        ),
-                        "stages/*-evidence.json",
+                        safe_csv(value) if value is not None else ""
+                        for value in [
+                            c["bom-ref"],
+                            c["name"],
+                            c["type"],
+                            c.get("version"),
+                            next(
+                                (
+                                    h["content"]
+                                    for h in c.get("hashes", [])
+                                    if h["alg"] == "SHA-256"
+                                ),
+                                "",
+                            ),
+                            "stages/*-evidence.json",
+                        ]
                     ]
                 )
         save(

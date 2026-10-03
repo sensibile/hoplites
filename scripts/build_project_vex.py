@@ -251,7 +251,8 @@ def main():
         raise ValueError("DT project/image digest mismatch")
     identities = {(c["name"], c.get("version"), c.get("purl")) for c in sbom["components"]}
     if any(
-        (c["name"], c.get("version"), c.get("purl")) not in identities for c in export["components"]
+        (c["name"], c.get("version"), c.get("purl")) not in identities
+        for c in export.get("components", [])
     ):
         raise ValueError("Export finding component not in verified SBOM")
     with tarfile.open(a.rootfs) as tar:
@@ -283,8 +284,8 @@ def main():
     report["reviewed_evidence_unavailable"] = manual_missing
     report["coverage"] = {
         "sbom_components": len(sbom["components"]),
-        "finding_components": len(export["components"]),
-        "finding_pairs": sum(len(v["affects"]) for v in export["vulnerabilities"]),
+        "finding_components": len(export.get("components", [])),
+        "finding_pairs": sum(len(v["affects"]) for v in export.get("vulnerabilities", [])),
         "components_without_DT_findings": [
             {
                 "name": c["name"],
@@ -293,7 +294,9 @@ def main():
             }
             for c in sbom["components"]
             if (c["name"], c.get("version"), c.get("purl"))
-            not in {(e["name"], e.get("version"), e.get("purl")) for e in export["components"]}
+            not in {
+                (e["name"], e.get("version"), e.get("purl")) for e in export.get("components", [])
+            }
         ],
     }
     report.update(
