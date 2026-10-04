@@ -30,6 +30,11 @@ from build_evidence_bundle import safe_csv
 from enrich_python_bom import process as python_view, LAUNCHER_URL, LAUNCHER_SHA256
 from audit_cpython_terms import process as cpython_audit
 from license_scope import collect as collect_scopes, render as render_scopes
+from license_fields import (
+    normalize as normalize_license_fields,
+    validate as validate_license_fields,
+    DIGEST,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SYFT = (
@@ -418,6 +423,9 @@ class Pipeline:
                 dest.write_bytes(raw)
             self.stage("node-package-view", bom, report)
             self.pending.extend(report["unresolved"])
+        bom, report = normalize_license_fields(bom)
+        self.stage("license-field-semantics", bom, report)
+        self.pending.extend(report["unresolved"])
         for c in bom["components"]:
             if c.get("type") == "file":
                 if any(
@@ -529,6 +537,7 @@ class Pipeline:
 
 
 def upload(pipeline, bom, ref, project):
+    validate_license_fields(bom)
     key = (
         subprocess.run(
             [
@@ -628,6 +637,18 @@ def upload(pipeline, bom, ref, project):
                         {"name": c["name"], "issue": "license scope differs", "property": name}
                     )
         licenses = c.get("licenses", [])
+        if not licenses and any(
+            found.get(k) for k in ("license", "licenseExpression", "resolvedLicense")
+        ):
+            problems.append({"name": c["name"], "issue": "stale license retained"})
+        for value in [
+            found.get("license"),
+            found.get("licenseExpression"),
+            (found.get("resolvedLicense") or {}).get("licenseId"),
+            (found.get("resolvedLicense") or {}).get("name"),
+        ]:
+            if isinstance(value, str) and DIGEST.fullmatch(value.strip()):
+                problems.append({"name": c["name"], "issue": "digest in DT license field"})
         if len(licenses) == 1:
             l = licenses[0]
             if "expression" in l and found.get("licenseExpression") != l["expression"]:
