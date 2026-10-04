@@ -104,7 +104,11 @@ class DebianTests(unittest.TestCase):
             self.assertEqual(bom, original)
             self.assertEqual(len(out["components"]), 4)
             self.assertEqual(report["file_normalization"]["removed_count"], 1)
-            self.assertEqual(out["components"][0]["licenses"], [{"expression": "MIT"}])
+            from license_scope import collect
+
+            self.assertFalse(out["components"][0].get("licenses"))
+            self.assertEqual(collect(out)[0]["declared_expression"], "MIT")
+            self.assertEqual(collect(out)[0]["applicability"], "unknown")
             rerun, _, _ = process(out, path, {"expat": "MIT"})
             self.assertEqual(out, rerun)
             bom["components"][-1]["hashes"][0]["content"] = "bad"

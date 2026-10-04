@@ -12,8 +12,9 @@ import tarfile
 from pathlib import Path
 from urllib.parse import urlsplit, parse_qs
 from normalize_syft_bom import normalize
+from license_scope import record as scope_record, attach as scope_attach
 
-RULE_VERSION = "debian-temurin-view-v1"
+RULE_VERSION = "debian-temurin-view-v2"
 
 
 def sha(raw):
@@ -211,12 +212,53 @@ def process(bom, rootfs, aliases, reviewed=None):
             )
             expression = " AND ".join("(" + e + ")" if " " in e else e for e in expressions)
             before = copy.deepcopy(package.get("licenses"))
-            package["licenses"] = [{"expression": expression}]
+            scoped = []
+            for paragraph in paragraphs:
+                if "Files" not in paragraph or "License" not in paragraph:
+                    continue
+                label = paragraph["License"].splitlines()[0]
+                declared = license_expression(
+                    label, aliases, name, doc_hash, license_refs, reviewed
+                )
+                scoped.append(
+                    scope_record(
+                        package,
+                        paragraph["Files"],
+                        "source-file-declaration",
+                        declared,
+                        "unknown",
+                        "unknown",
+                        {
+                            "copyright_path": "/" + resolved,
+                            "sha256": doc_hash,
+                            "source_label": label,
+                            "copyright": paragraph.get("Copyright"),
+                            "source_selector": paragraph["Files"],
+                        },
+                    )
+                )
+            if not scoped:
+                scoped.append(
+                    scope_record(
+                        package,
+                        "legacy copyright document",
+                        "source-document",
+                        expression,
+                        "unknown",
+                        "unknown",
+                        {"path": "/" + resolved, "sha256": doc_hash},
+                    )
+                )
+            scope_attach(
+                package,
+                scoped,
+                "Scanner-declared package terms retained; source paragraph terms are separate candidates, not a binary-wide AND conclusion",
+            )
             package.setdefault("properties", []).extend(
                 [
                     {
                         "name": "hoplites:debian:license-assessment",
-                        "value": "inferred-source-copyright-aggregate; source-file-applicability-not-confirmed",
+                        "value": "scanner-declaration-retained; per-source-file-applicability-unresolved",
                     },
                     {"name": "hoplites:debian:copyright-sha256", "value": doc_hash},
                     {"name": "hoplites:debian:copyright-path", "value": "/" + resolved},
@@ -227,11 +269,13 @@ def process(bom, rootfs, aliases, reviewed=None):
                     "bom_ref": package["bom-ref"],
                     "name": name,
                     "before": before,
-                    "after": package["licenses"],
+                    "after": package.get("licenses"),
                     "copyright_path": "/" + resolved,
                     "copyright_sha256": doc_hash,
                     "source_labels": labels,
-                    "scope": "Source copyright paragraph license sets; may overinclude source/build/documentation terms",
+                    "scope": "Source declarations preserved per Files paragraph; no binary-wide conjunction",
+                    "source_aggregate_candidate": expression,
+                    "license_scopes": scoped,
                 }
             )
         runtime = None
@@ -291,7 +335,30 @@ def process(bom, rootfs, aliases, reviewed=None):
                             "identifier": identifier,
                         }
                     )
-            expression = " AND ".join(sorted(expressions))
+            scoped = [
+                scope_record(
+                    runtime,
+                    item["path"],
+                    "assembly-exception-document"
+                    if item["path"].endswith("ASSEMBLY_EXCEPTION")
+                    else "module-legal-document",
+                    item["identifier"],
+                    "unknown",
+                    "unknown",
+                    {
+                        "path": item["resolved_path"],
+                        "sha256": item["sha256"],
+                        "module": item["path"].split("/legal/", 1)[1].split("/", 1)[0],
+                    },
+                )
+                for item in legal
+            ]
+            scope_attach(
+                runtime,
+                scoped,
+                "Main GPL/Classpath terms inferred from java.base distribution; per-module documents and assembly exception require separate review",
+            )
+            expression = "GPL-2.0-only WITH Classpath-exception-2.0"
             changes.append(
                 {
                     "bom_ref": runtime["bom-ref"],
@@ -306,7 +373,7 @@ def process(bom, rootfs, aliases, reviewed=None):
                 [
                     {
                         "name": "hoplites:temurin:license-scope",
-                        "value": "GPLv2 Classpath main terms plus complete shipped legal documents; LicenseRef identities need further canonical mapping",
+                        "value": "Main GPL/Classpath distribution terms; separate module document scopes remain unresolved",
                     },
                     {"name": "hoplites:temurin:release-sha256", "value": sha(release_raw)},
                 ]
@@ -325,6 +392,23 @@ def process(bom, rootfs, aliases, reviewed=None):
                     }
                 )
                 jars[0]["licenses"] = [{"expression": "GPL-2.0-only WITH Classpath-exception-2.0"}]
+                scope_attach(
+                    jars[0],
+                    [
+                        scope_record(
+                            jars[0],
+                            "jrt-fs.jar",
+                            "shipped-runtime-artifact",
+                            "GPL-2.0-only WITH Classpath-exception-2.0",
+                            "confirmed",
+                            "inferred",
+                            {
+                                "assessment": "inferred-from-JRE-distribution; module-source-header-verification-pending"
+                            },
+                        )
+                    ],
+                    "Distribution inference; module source header verification pending",
+                )
                 jars[0].setdefault("properties", []).append(
                     {
                         "name": "hoplites:temurin:license-assessment",
@@ -420,7 +504,7 @@ def process(bom, rootfs, aliases, reviewed=None):
             "file_normalization": file_report,
             "remaining_count": len(normalized["components"]),
             "limitations": [
-                "Debian copyright expressions describe source-file license sets; binary applicability remains inferred.",
+                "Debian source paragraphs are separate candidate scopes; binary applicability remains unknown. Scanner declarations are retained, not verified.",
                 "LicenseRef terms retain complete source text; canonical SPDX mapping is incomplete.",
                 "JRE directory ownership is distribution attribution, not a rebuilt-byte equivalence proof.",
                 "Recipient notices and license fulfillment are not verified.",

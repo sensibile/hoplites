@@ -67,11 +67,10 @@ class NodeViewTests(unittest.TestCase):
         result, report, sources = process(bom, files)
         self.assertEqual(json.dumps(bom), original)
         self.assertEqual(len(result["components"]), 3)
-        self.assertTrue(
-            result["components"][0]["licenses"][0]["expression"].startswith(
-                "MIT AND LicenseRef-Node-"
-            )
-        )
+        self.assertEqual(result["components"][0]["licenses"], [{"license": {"id": "MIT"}}])
+        from license_scope import collect
+
+        self.assertEqual(collect(result)[0]["applicability"], "unknown")
         owners = [
             x["ownership"]["owner_bom_ref"] for x in report["file_normalization"]["removed_files"]
         ]

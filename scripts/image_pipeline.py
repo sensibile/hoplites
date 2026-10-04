@@ -29,6 +29,7 @@ from audit_erlang_licenses import archive_files, audit
 from build_evidence_bundle import safe_csv
 from enrich_python_bom import process as python_view, LAUNCHER_URL, LAUNCHER_SHA256
 from audit_cpython_terms import process as cpython_audit
+from license_scope import collect as collect_scopes, render as render_scopes
 
 ROOT = Path(__file__).resolve().parents[1]
 SYFT = (
@@ -440,15 +441,36 @@ class Pipeline:
                         "next": "Find shipped or version-pinned upstream terms",
                     }
                 )
+        save(
+            self.out / "license-scopes.json",
+            {
+                "rule_version": "license-scope-v1",
+                "records": collect_scopes(bom),
+                "fulfillment": "not-verified",
+                "scope": "Project license fields and per-target declarations are separate",
+            },
+        )
+        (self.out / "license-scopes.html").write_text(render_scopes(bom))
         return bom
 
     def bundle(self, original, bom):
+        save(
+            self.out / "license-scopes.json",
+            {
+                "rule_version": "license-scope-v1",
+                "records": collect_scopes(bom),
+                "fulfillment": "not-verified",
+            },
+        )
+        (self.out / "license-scopes.html").write_text(render_scopes(bom))
         out = self.out / "submission"
         out.mkdir()
         for name in [
             "original.cdx.json",
             "normalized.cdx.json",
             "normalization-evidence.json",
+            "license-scopes.json",
+            "license-scopes.html",
             "image.json",
             "commands.json",
             "summary.json",
@@ -564,6 +586,7 @@ def upload(pipeline, bom, ref, project):
         page += 1
     actual = {(c["name"], c.get("version"), c.get("purl")): c for c in rows}
     problems = []
+    scope_verification = []
     for c in bom["components"]:
         found = actual.get((c["name"], c.get("version"), c.get("purl")))
         if not found:
@@ -574,6 +597,36 @@ def upload(pipeline, bom, ref, project):
                 problems.append(
                     {"name": c["name"], "purl": c.get("purl"), "issue": "SHA-256 differs"}
                 )
+        expected_scopes = {
+            p["name"]: p["value"]
+            for p in c.get("properties", [])
+            if p["name"].startswith("hoplites:license-scope:")
+        }
+        if expected_scopes:
+            detail = api("component/" + found["uuid"] + "/property")
+            stored = {
+                (p.get("groupName", "") + ":" if p.get("groupName") else "")
+                + p["propertyName"]: p.get("propertyValue")
+                for p in detail
+            }
+            scoped_stored = {
+                k: v for k, v in stored.items() if k.startswith("hoplites:license-scope:")
+            }
+            if set(scoped_stored) != set(expected_scopes):
+                problems.append({"name": c["name"], "issue": "license scope property set differs"})
+            scope_verification.append(
+                {
+                    "name": c["name"],
+                    "purl": c.get("purl"),
+                    "uuid": found["uuid"],
+                    "stored_properties": scoped_stored,
+                }
+            )
+            for name, value in expected_scopes.items():
+                if stored.get(name) != value:
+                    problems.append(
+                        {"name": c["name"], "issue": "license scope differs", "property": name}
+                    )
         licenses = c.get("licenses", [])
         if len(licenses) == 1:
             l = licenses[0]
@@ -591,6 +644,7 @@ def upload(pipeline, bom, ref, project):
             "expected": len(bom["components"]),
             "actual": len(rows),
             "mismatches": problems,
+            "license_scope_verification": scope_verification,
             "components": rows,
         },
     )
