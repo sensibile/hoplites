@@ -2,6 +2,7 @@
 
 import copy
 import re
+import json
 from license_scope import attach, collect, record, PREFIX
 
 RULE_VERSION = "license-field-semantics-v1"
@@ -47,7 +48,13 @@ def normalize(bom):
             {k: v for k, v in r.items() if k not in ("component", "version")}
             for r in collect({"components": [c]})
         ]
+        observations = {}
         for item, fields in rejected:
+            key = json.dumps([item, fields], sort_keys=True)
+            if key not in observations:
+                observations[key] = [item, fields, 0]
+            observations[key][2] += 1
+        for item, fields, count in observations.values():
             existing.append(
                 record(
                     c,
@@ -58,6 +65,7 @@ def normalize(bom):
                     "unknown",
                     {
                         "scanner_declaration": item,
+                        "occurrence_count": count,
                         "rejected_fields": fields,
                         "assessment": "Digest identifies scanner evidence, not license terms; original SBOM retained",
                     },

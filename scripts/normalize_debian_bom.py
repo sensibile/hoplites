@@ -436,9 +436,13 @@ def process(bom, rootfs, aliases, reviewed=None):
             hashes = [h["content"] for h in c.get("hashes", []) if h["alg"] == "SHA-256"]
             if hashes != [sha(raw)]:
                 continue
-            candidate = sorted(
-                set(owners.get(path, [])) | resolved_owners.get("/" + resolved, set())
-            )
+            # Direct lists establish ownership of link metadata, not linked bytes.
+            try:
+                read(path, follow_leaf=False)
+                direct = set(owners.get(path, []))
+            except ValueError:
+                direct = set()
+            candidate = sorted(direct | resolved_owners.get("/" + resolved, set()))
             owner = None
             kind = None
             if len(candidate) == 1:

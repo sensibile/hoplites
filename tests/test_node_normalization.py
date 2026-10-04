@@ -110,6 +110,81 @@ class NodeViewTests(unittest.TestCase):
         self.assertNotIn(manifest, refs)
         self.assertTrue(any(r.get("path") == path for r in report["unresolved"]))
 
+    def test_unverified_node_headers_are_retained_and_project_license_is_inferred(self):
+        bom, files = self.fixture()
+        path = "/usr/local/include/node/third-party/library.h"
+        files[path] = b"third-party code"
+        bom["components"].append(
+            {
+                "name": path,
+                "bom-ref": path,
+                "type": "file",
+                "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(files[path]).hexdigest()}],
+            }
+        )
+        files["/usr/local/LICENSE"] = files["/usr/local/LICENSE"].replace(
+            b"This license applies", b"Additional downstream restrictions.\nThis license applies"
+        )
+        out, report, _ = process(bom, files)
+        self.assertIn(path, {c["bom-ref"] for c in out["components"]})
+        change = next(c for c in report["changes"] if c["bom_ref"] == "node")
+        self.assertTrue(change["assessment"].startswith("inferred-"))
+        self.assertTrue(change["limitations"])
+        from license_scope import collect
+
+        project = next(r for r in collect(out) if r["subject"] == "Node project terms")
+        self.assertEqual(project["applicability"], "unknown")
+
+    def test_leaf_symlink_cannot_own_unlisted_target_bytes(self):
+        import io
+        import tarfile
+        import tempfile
+        from normalize_debian_bom import process as debian
+
+        with tempfile.TemporaryDirectory() as directory:
+            rootfs = Path(directory) / "rootfs.tar"
+            with tarfile.open(rootfs, "w") as tar:
+                for name, data in {
+                    "var/lib/dpkg/status": b"Package: tools\nStatus: install ok installed\nVersion: 1\nArchitecture: arm64\n",
+                    "var/lib/dpkg/info/tools.list": b"/usr/bin/tool\n",
+                    "usr/lib/real": b"unowned binary",
+                }.items():
+                    m = tarfile.TarInfo(name)
+                    m.size = len(data)
+                    tar.addfile(m, io.BytesIO(data))
+                m = tarfile.TarInfo("usr/bin/tool")
+                m.type = tarfile.SYMTYPE
+                m.linkname = "../lib/real"
+                tar.addfile(m)
+            file = {
+                "name": "/usr/bin/tool",
+                "bom-ref": "target",
+                "type": "file",
+                "hashes": [
+                    {"alg": "SHA-256", "content": hashlib.sha256(b"unowned binary").hexdigest()}
+                ],
+            }
+            bom = {
+                "components": [
+                    {
+                        "name": "tools",
+                        "bom-ref": "tools",
+                        "type": "library",
+                        "version": "1",
+                        "purl": "pkg:deb/debian/tools@1?arch=arm64",
+                    },
+                    file,
+                    {
+                        "name": "debian",
+                        "version": "12",
+                        "type": "operating-system",
+                        "bom-ref": "os",
+                    },
+                ]
+            }
+            out, _, _ = debian(bom, rootfs, {})
+            self.assertIn("target", {c["bom-ref"] for c in out["components"]})
+
     def test_version_conflict_fails(self):
         bom, files = self.fixture()
         bom["components"][0]["version"] = "24.1.0"

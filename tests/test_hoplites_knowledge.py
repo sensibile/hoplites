@@ -262,6 +262,44 @@ class ConsumerContract(unittest.TestCase):
             with self.assertRaises(ConsumerError):
                 checked_response(value, "service")
 
+    def test_architecture_scoped_knowledge_uses_debian_package_identity(self):
+        for arch, platform in (("i386", "linux/amd64"), ("armhf", "linux/arm/v7")):
+            with self.subTest(arch=arch):
+                bundle = copy.deepcopy(self.bundle)
+                bundle["subject"] = "pkg:deb/debian/example@1?arch=" + arch
+                bundle["artifact"]["platform"] = platform
+                snapshot = copy.deepcopy(self.snapshot)
+                for op in bundle["write_template"]["request"]["operations"]:
+                    if op["op"] == "put":
+                        snapshot["graph"]["records"][op["record"]["id"]] = copy.deepcopy(
+                            op["record"]
+                        )
+                extra = copy.deepcopy(next(iter(snapshot["graph"]["records"].values())))
+                extra.update(id="arch-support", subject=bundle["subject"])
+                extra["conditions"] = dict(bundle["artifact"], architecture=arch)
+                snapshot["graph"]["records"][extra["id"]] = extra
+                self.assertIn("arch-support", report(bundle, snapshot, 1)["records"])
+
+    def test_transitive_support_rejects_conflicting_conditions_but_allows_reuse(self):
+        target = self.bundle["record_ids"][-1]
+        for key, wrong in (
+            ("image_manifest", "sha256:" + "d" * 64),
+            ("package_version", "2"),
+            ("platform", "linux/amd64"),
+            ("architecture", "i386"),
+        ):
+            snapshot = copy.deepcopy(self.snapshot)
+            template = next(iter(snapshot["graph"]["records"].values()))
+            for name, conditions in (("conflict", {key: wrong}), ("reusable", {})):
+                r = copy.deepcopy(template)
+                r.update(id=name, subject="other", conditions=conditions)
+                snapshot["graph"]["records"][name] = r
+                snapshot["graph"]["links"].append({"from": name, "to": target, "kind": "supports"})
+            result = report(self.bundle, snapshot, 1)
+            self.assertNotIn("conflict", result["records"])
+            self.assertIn("conflict", result["excluded_condition_records"])
+            self.assertIn("reusable", result["records"])
+
     def test_same_purl_from_another_artifact_is_not_reused(self):
         other = copy.deepcopy(next(iter(self.snapshot["graph"]["records"].values())))
         other["id"] = "other-image"

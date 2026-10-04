@@ -36,6 +36,16 @@ class LicenseFieldTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             validate(before)
 
+    def test_repeated_digest_declaration_retains_count_without_duplicate_parts(self):
+        item = {"license": {"name": "sha256:" + "a" * 64}}
+        out, _ = normalize(
+            {"components": [{"name": "p", "bom-ref": "p", "licenses": [item, item]}]}
+        )
+        rows = collect(out)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["evidence"]["occurrence_count"], 2)
+        self.assertEqual(normalize(out)[0], out)
+
     def test_hash_only_is_unknown_not_fabricated_license(self):
         for item in [
             {"license": {"name": "SHA-256:" + "b" * 64}},

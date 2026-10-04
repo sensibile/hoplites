@@ -129,11 +129,28 @@ def process(bom, files):
                 )
             if not terms:
                 raise ValueError("Node bundled notice inventory missing")
+            scoped.append(
+                scope_record(
+                    node,
+                    "Node project terms",
+                    "project-declaration",
+                    "MIT",
+                    "confirmed",
+                    "unknown",
+                    {
+                        "notice_path": license_path,
+                        "notice_sha256": sha(raw),
+                        "assessment": "inferred-from-excerpts",
+                        "limitations": "Full project notice identity unverified",
+                        "next_action": "Review full shipped project terms against the exact upstream release",
+                    },
+                )
+            )
             proposed = [{"license": {"id": "MIT"}}]
             scope_attach(
                 node,
                 scoped,
-                "MIT applies to Node project code only; bundled and external terms must be reviewed in individual license scope records",
+                "MIT is inferred from project notice excerpts; full project and per-target terms require review",
             )
             changes.append(
                 {
@@ -143,15 +160,18 @@ def process(bom, files):
                     "after": proposed,
                     "source_path": license_path,
                     "source_sha256": sha(raw),
-                    "assessment": "MIT project terms verified; per-target third-party applicability recorded separately",
+                    "assessment": "inferred-MIT-from-installed-excerpts; full project terms unverified",
                     "license_scopes": scoped,
+                    "rationale": "Installed notice excerpts resemble MIT",
+                    "limitations": "Full project terms are not bound to a reviewed release",
+                    "use_risk": "Modified downstream conditions may differ; review the full shipped project terms",
                 }
             )
             node["licenses"] = proposed
             node.setdefault("properties", []).append(
                 {
                     "name": "hoplites:node:license-scope",
-                    "value": "Node project MIT; separate third-party terms and applicability records; fulfillment not verified",
+                    "value": "inferred Node project MIT; full project terms and third-party applicability unverified; fulfillment not verified",
                 }
             )
             pending.append(
@@ -232,10 +252,19 @@ def process(bom, files):
             and (
                 path == "/usr/local/bin/node"
                 or path == "/usr/local/LICENSE"
-                or path.startswith("/usr/local/include/node/")
+                or path == "/usr/local/include/node/node_version.h"
             )
         ):
             owner, kind = node, "verified-Node-header-and-distribution-directory"
+        if owner is None and path.startswith("/usr/local/include/node/"):
+            pending.append(
+                {
+                    "component": c["bom-ref"],
+                    "path": path,
+                    "reason": "Node header descendant ownership unverified; file retained",
+                    "next": "Verify exact distribution manifest or identify included software",
+                }
+            )
         if owner:
             entries.append(
                 {

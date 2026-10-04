@@ -210,10 +210,10 @@ def report(bundle, exported, version):
         if op["op"] == "link" and op["link"] not in links:
             raise ValueError("missing exported relationship")
 
-    def compatible(item):
+    def compatible(item, support=False):
         conditions = item.get("conditions", {})
         artifact = bundle["artifact"]
-        if (
+        if not support and (
             conditions.get("image_manifest") != artifact["image_manifest"]
             or conditions.get("package_version") != artifact["package_version"]
         ):
@@ -221,10 +221,13 @@ def report(bundle, exported, version):
         for key, value in conditions.items():
             expected_value = artifact.get(key)
             if key == "architecture":
-                expected_value = artifact["platform"].split("/")[-1]
+                try:
+                    expected_value = component_architecture({"purl": bundle["subject"]})
+                except ValueError:
+                    return False
             if value != expected_value:
                 return False
-        return "platform" in conditions or "architecture" in conditions
+        return support or "platform" in conditions or "architecture" in conditions
 
     selected = {
         k: v for k, v in records.items() if v.get("subject") == bundle["subject"] and compatible(v)
@@ -235,7 +238,9 @@ def report(bundle, exported, version):
     # Keep incoming transitive supporting evidence, even when its subject differs.
     while True:
         extra = {l["from"] for l in links if l["kind"] == "supports" and l["to"] in selected}
-        missing = extra - selected.keys()
+        candidates = extra - selected.keys()
+        missing = {k for k in candidates if compatible(records[k], support=True)}
+        excluded = sorted(set(excluded) | (candidates - missing))
         if not missing:
             break
         selected.update({k: records[k] for k in missing})

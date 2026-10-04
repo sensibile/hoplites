@@ -33,6 +33,28 @@ class ComparisonTests(unittest.TestCase):
         self.assertFalse(result["shared"])
         self.assertEqual(len(result["left_only"]), 1)
 
+    def test_duplicate_identity_comparison_is_order_independent_and_preserves_pairs(self):
+        import copy
+
+        a = {
+            "type": "library",
+            "name": "a",
+            "version": "1",
+            "purl": "pkg:npm/a@1?x=1",
+            "licenses": [{"expression": "MIT"}],
+        }
+        b = dict(a, purl="pkg:npm/a@1?x=2", licenses=[{"expression": "Apache-2.0"}])
+        left = {"components": [a, b]}
+        right = {"components": [b, a]}
+        shared = compare(left, right)["shared"][0]
+        self.assertTrue(shared["purl_equal"] and shared["licenses_equal"])
+        swapped = copy.deepcopy(right)
+        swapped["components"][0]["licenses"], swapped["components"][1]["licenses"] = (
+            swapped["components"][1]["licenses"],
+            swapped["components"][0]["licenses"],
+        )
+        self.assertFalse(compare(left, swapped)["shared"][0]["licenses_equal"])
+
     def test_advisory_uses_source_version_and_never_applies_vex(self):
         bom = {
             "components": [
