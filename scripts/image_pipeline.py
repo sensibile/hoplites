@@ -30,6 +30,7 @@ from build_evidence_bundle import safe_csv
 from enrich_python_bom import process as python_view, LAUNCHER_URL, LAUNCHER_SHA256
 from audit_cpython_terms import process as cpython_audit
 from license_scope import collect as collect_scopes, render as render_scopes
+from validate_enrichment import audit as audit_enrichment
 from license_fields import (
     normalize as normalize_license_fields,
     validate as validate_license_fields,
@@ -462,6 +463,7 @@ class Pipeline:
         return bom
 
     def bundle(self, original, bom):
+        save(self.out / "enrichment-validation.json", audit_enrichment(original, bom))
         save(
             self.out / "license-scopes.json",
             {
@@ -479,6 +481,7 @@ class Pipeline:
             "normalization-evidence.json",
             "license-scopes.json",
             "license-scopes.html",
+            "enrichment-validation.json",
             "image.json",
             "commands.json",
             "summary.json",
@@ -921,7 +924,11 @@ def main():
                         for item in decisions["unresolved"]
                     )
         summary.update(
-            status="completed", unresolved_count=len(pipe.pending), unresolved=pipe.pending
+            status="execution-completed",
+            enrichment_status=audit_enrichment(original, bom)["status"],
+            enrichment_complete=False,
+            unresolved_count=len(pipe.pending),
+            unresolved=pipe.pending,
         )
         save(pipe.out / "summary.json", summary)
         pipe.bundle(original, bom)

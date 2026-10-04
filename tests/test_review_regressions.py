@@ -208,6 +208,9 @@ class ReviewRegressions(unittest.TestCase):
             (root / "rootfs.tar").write_bytes(b"rootfs")
             (root / "image-save.tar").write_bytes(b"image")
             Pipeline(root, root / "cache").bundle(original, bom)
+            enrichment = json.loads((root / "submission/enrichment-validation.json").read_text())
+            self.assertFalse(enrichment["enrichment_complete"])
+            self.assertEqual(enrichment["status"], "partial")
             with (root / "submission/excluded-components.csv").open() as stream:
                 rows = list(csv.reader(stream))
             self.assertEqual(rows[1][:2], ["'=1+1", "'=1+1"])

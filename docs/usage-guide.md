@@ -101,7 +101,7 @@ python3 scripts/image_pipeline.py alpine:3.24 --trivy --upload
 python3 -m json.tool artifacts/ubuntu-amd64-run-001/summary.json
 ```
 
-`status: completed`는 실행 완료를 뜻한다. `unresolved`가 남아 있으면 해당 항목의 추가 확인이 필요하다. API 검증과 UI 표시 확인은 별도이며, 특히 SPDX 복합 표현은 DT 화면에 개별 라이선스 링크로 보이지 않을 수 있다.
+`status: execution-completed`는 실행 완료만 뜻한다. 요청한 정보 보강 완료 여부는 `enrichment_status`와 `enrichment_complete`, [보강 완료 검증](enrichment-validation.md)의 검토 보고서로 별도 판단한다. `unresolved`가 남아 있으면 해당 항목의 추가 확인이 필요하다. API 검증과 UI 표시 확인은 별도이며, 특히 SPDX 복합 표현은 DT 화면에 개별 라이선스 링크로 보이지 않을 수 있다.
 
 제출할 때는 `submission/`을 중심으로 사용하고 `excluded-components.csv`와 단계별 근거를 함께 제공한다. 대용량 `rootfs.tar`와 `image-save.tar`는 번들 밖에 보관하며 manifest의 해시로 연결된다. 라이선스 정보 보강과 실제 고지·소스 제공 등 의무 이행은 별도로 관리한다.
 
