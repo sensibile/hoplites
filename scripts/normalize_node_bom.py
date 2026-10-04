@@ -11,6 +11,7 @@ from pathlib import PurePosixPath
 from normalize_syft_bom import normalize
 from license_scope import record as scope_record, attach as scope_attach
 from elf_linkage import inspect as inspect_elf
+from elf_linkage import UnsupportedEncoding
 
 RULE_VERSION = "node-installed-view-v2"
 
@@ -64,12 +65,23 @@ def process(bom, files):
             terms = []
             scoped = []
             linkage = None
+            linkage_issue = None
             config = None
             config_path = "/usr/local/include/node/config.gypi"
             binary_path = "/usr/local/bin/node"
             if config_path in files and binary_path in files:
                 config = ast.literal_eval(files[config_path].decode())["variables"]
-                linkage = inspect_elf(files[binary_path], ("SSL_new", "inflate", "uv_run"))
+                try:
+                    linkage = inspect_elf(files[binary_path], ("SSL_new", "inflate", "uv_run"))
+                except UnsupportedEncoding as exc:
+                    linkage_issue = str(exc)
+                    pending.append(
+                        {
+                            "component": node["bom-ref"],
+                            "reason": linkage_issue,
+                            "next": "Inspect linkage with a reader supporting this ELF encoding",
+                        }
+                    )
                 sources[config_path.lstrip("/")] = files[config_path]
             inclusion_rules = {
                 "OpenSSL": ("node_shared_openssl", "SSL_new", ("libssl", "libcrypto")),
@@ -95,6 +107,14 @@ def process(bom, files):
                         ].encode()
                     ),
                 }
+                if linkage_issue:
+                    evidence.update(
+                        linkage_assessment="unresolved",
+                        reason=linkage_issue,
+                        binary_sha256=sha(files[binary_path]),
+                        config_sha256=sha(files[config_path]),
+                        next_action="Inspect linkage with a reader supporting this ELF encoding",
+                    )
                 if config is not None and linkage is not None:
                     evidence.update(
                         binary_sha256=sha(files[binary_path]), config_sha256=sha(files[config_path])

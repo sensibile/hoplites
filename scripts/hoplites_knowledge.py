@@ -284,7 +284,11 @@ def component_architecture(component):
 
 def installation_from_tar(path, package, architecture, version):
     """Read bounded regular dpkg evidence without extracting or following tar links."""
-    wanted = {f"var/lib/dpkg/info/{package}:{architecture}.list", "var/lib/dpkg/status"}
+    list_paths = {
+        f"var/lib/dpkg/info/{package}:{architecture}.list",
+        f"var/lib/dpkg/info/{package}.list",
+    }
+    wanted = list_paths | {"var/lib/dpkg/status"}
     captured = {}
     rootfs_hash = hashlib.sha256()
     with path.open("rb") as source:
@@ -299,9 +303,10 @@ def installation_from_tar(path, package, architecture, version):
                 if name in captured or not member.isfile() or member.size > 8 * 1024 * 1024:
                     raise ValueError("duplicate, linked or oversized dpkg evidence")
                 captured[name] = archive.extractfile(member).read()
-    if captured.keys() != wanted:
+    available = list_paths & captured.keys()
+    if "var/lib/dpkg/status" not in captured or len(available) != 1:
         raise ValueError("exact dpkg evidence missing")
-    list_path = f"var/lib/dpkg/info/{package}:{architecture}.list"
+    list_path = next(iter(available))
     paths = captured[list_path].decode().splitlines()
     entries = []
     for paragraph in captured["var/lib/dpkg/status"].decode().split("\n\n"):

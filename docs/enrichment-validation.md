@@ -32,10 +32,10 @@ python3 scripts/validate_enrichment.py check \
 ## 검사하는 내용
 
 * 입력·출력 SHA-256과 목적·요청 필드·대상 범위를 고정한다.
-* 범위 내 모든 출력 대상에 필드별 평가를 요구한다. 원본 관리 대상이 삭제되거나 매핑에서 빠지면 실패한다. 제외는 이유와 실제 근거 파일이 필요하다.
+* 범위 내 모든 출력 대상에 필드별 평가를 요구한다. 원본 관리 대상이 삭제되거나 매핑에서 빠지면 실패한다. 제외는 PURL이 없는 원본 file만 허용하며 classification=installation-inventory 또는 documentation, status=confirmed와 출력에 남은 owner_bom_ref가 필요하다. 이유·실제 근거 파일과 원본 파일 SHA-256도 일치해야 한다. 실제 library/application은 제외 계약으로 누락을 정당화할 수 없다. 분류와 소유권 판단의 사실성은 담당자 검토 대상이다.
 * 표준 필드가 비어 있는데 근거 속성만 있거나, 평가값과 실제 값이 다르거나, 해시를 라이선스 이름으로 쓰면 실패한다.
 * 근거 파일의 존재·해시, 추정 근거·한계·사용 위험, 미해결 조사·다음 조치를 검사한다. 파일 누락·변조와 중복 평가도 실패한다.
-* license_coverage=delivered-artifact이면 포함 코드의 미확인 범위도 미해결로 남긴다. 본체 MIT 하나로 번들 전체가 완료됐다고 할 수 없다. 프로젝트 선언만 요청한 경우에만 project-declaration을 선택한다. 결과를 통과시키려고 요청 범위를 줄이면 안 된다.
+* license_coverage=delivered-artifact이면 포함 코드의 미확인 범위와 거절된 스캐너 라이선스 선언도 미해결로 남긴다. 본체 MIT 하나로 번들 전체가 완료됐다고 할 수 없다. 프로젝트 선언만 요청한 경우에만 project-declaration을 선택한다. 결과를 통과시키려고 요청 범위를 줄이면 안 된다.
 
 ## 자동 경로와 한계
 

@@ -165,6 +165,23 @@ def audit(before, bom, contract=None, root=None, before_hash=None, bom_hash=None
         if not text(exclusion.get("reason")):
             error("exclusion-purpose-missing", ref)
         evidence(exclusion.get("evidence", []), ref)
+        component = source.get(ref, {})
+        owner = output.get(exclusion.get("owner_bom_ref"), {})
+        hashes = {
+            h.get("content") for h in component.get("hashes", []) if h.get("alg") == "SHA-256"
+        }
+        if (
+            component.get("type") != "file"
+            or component.get("purl")
+            or exclusion.get("classification") not in {"installation-inventory", "documentation"}
+            or exclusion.get("status") != "confirmed"
+            or not owner
+            or owner.get("type") == "file"
+            or exclusion.get("owner_bom_ref") in exclusions
+            or not hashes
+            or not any(e.get("sha256") in hashes for e in exclusion.get("evidence", []))
+        ):
+            error("exclusion-nonsoftware-ownership-unverified", ref)
     selected = {
         ref for ref, c in output.items() if c.get("type") in types and ref not in exclusions
     }
@@ -228,10 +245,7 @@ def audit(before, bom, contract=None, root=None, before_hash=None, bom_hash=None
             error("requested-source-component-dropped-or-unmapped", ref)
     if "licenses" in fields and scope.get("license_coverage") == "delivered-artifact":
         for row in collect(bom):
-            if (
-                row["owner_bom_ref"] not in selected
-                or row["relation"] == "scanner-evidence-reference"
-            ):
+            if row["owner_bom_ref"] not in selected:
                 continue
             if row.get("inclusion") not in (
                 "confirmed",

@@ -191,6 +191,28 @@ class NodeViewTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             process(bom, files)
 
+    def test_unsupported_elf_encodings_preserve_node_and_unknown_scopes(self):
+        from license_scope import collect
+        from elf_linkage import inspect
+
+        for encoding in (b"\x01\x01", b"\x02\x02"):
+            bom, files = self.fixture()
+            files["/usr/local/bin/node"] = b"\x7fELF" + encoding + b"\x01" + b"\0" * 57
+            files["/usr/local/include/node/config.gypi"] = (
+                b"{'variables': {'node_shared_libuv': 'false'}}"
+            )
+            files["/usr/local/LICENSE"] = files["/usr/local/LICENSE"].replace(b"- uv,", b"- libuv,")
+            out, report, _ = process(bom, files)
+            node = next(c for c in out["components"] if c["bom-ref"] == "node")
+            self.assertEqual(node["version"], "24.21.0")
+            self.assertEqual(node["licenses"], [{"license": {"id": "MIT"}}])
+            scope = next(r for r in collect(out) if r["subject"] == "libuv")
+            self.assertEqual(scope["inclusion"], "unknown")
+            self.assertEqual(scope["evidence"]["linkage_assessment"], "unresolved")
+            self.assertTrue(any("ELF" in p.get("reason", "") for p in report["unresolved"]))
+        with self.assertRaises(ValueError):
+            inspect(b"not ELF")
+
     def test_hash_mismatch_retains_file(self):
         bom, files = self.fixture()
         files["/usr/local/bin/node"] = b"changed"

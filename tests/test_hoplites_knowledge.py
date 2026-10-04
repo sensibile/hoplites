@@ -160,6 +160,39 @@ class ConsumerContract(unittest.TestCase):
                 installation_from_tar(path, "example", "arm64", "1")
             self.assertFalse((Path(directory) / "var").exists())
 
+    def test_unqualified_dpkg_list_and_ambiguous_forms(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rootfs.tar"
+            for lists, arch in (
+                (["example.list"], "arm64"),
+                (["example.list", "example:arm64.list"], "arm64"),
+                (["example.list"], "i386"),
+            ):
+                with self.subTest(lists=lists, arch=arch):
+                    with tarfile.open(path, "w") as archive:
+                        data = {
+                            "var/lib/dpkg/status": f"Package: example\nStatus: install ok installed\nArchitecture: {arch}\nVersion: 1\n".encode()
+                        }
+                        data.update(
+                            {
+                                "var/lib/dpkg/info/" + name: b"/usr/share/doc/example/copyright\n"
+                                for name in lists
+                            }
+                        )
+                        for name, raw in data.items():
+                            info = tarfile.TarInfo(name)
+                            info.size = len(raw)
+                            archive.addfile(info, io.BytesIO(raw))
+                    if len(lists) == 1 and arch == "arm64":
+                        self.assertTrue(
+                            installation_from_tar(path, "example", "arm64", "1")[0][
+                                "documentation_paths_only"
+                            ]
+                        )
+                    else:
+                        with self.assertRaises(ValueError):
+                            installation_from_tar(path, "example", "arm64", "1")
+
     def test_cli_uses_selected_debian_architecture_for_multiarch_and_arm_variant(self):
         script = Path(__file__).parents[1] / "scripts/hoplites_knowledge.py"
         for arch, platform in (("i386", "linux/amd64"), ("armhf", "linux/arm/v7")):

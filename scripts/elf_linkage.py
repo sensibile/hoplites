@@ -3,7 +3,14 @@
 import struct
 
 
+class UnsupportedEncoding(ValueError):
+    """Valid ELF identification uses an encoding this inspector does not support."""
+
+
 def inspect(raw, symbols=()):
+    if raw[:4] == b"\x7fELF" and len(raw) >= 16 and raw[4] in (1, 2) and raw[5] in (1, 2):
+        if raw[4:6] != b"\x02\x01":
+            raise UnsupportedEncoding("ELF class or byte order unsupported; linkage unresolved")
     if raw[:6] != b"\x7fELF\x02\x01":
         raise ValueError("Expected ELF64 little-endian binary")
     offset = struct.unpack_from("<Q", raw, 32)[0]

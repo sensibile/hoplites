@@ -252,18 +252,63 @@ class EnrichmentValidationTests(unittest.TestCase):
 
     def test_exclusion_requires_reason_and_real_evidence(self):
         self.before["components"].append(
-            {"name": "inventory", "type": "library", "bom-ref": "inventory"}
+            {
+                "name": "inventory",
+                "type": "file",
+                "bom-ref": "inventory",
+                "hashes": [
+                    {
+                        "alg": "SHA-256",
+                        "content": hashlib.sha256(self.evidence.read_bytes()).hexdigest(),
+                    }
+                ],
+            }
         )
         self.contract["scope"]["exclusions"] = [
             {
                 "bom_ref": "inventory",
                 "reason": "Verified inventory evidence is linked to its owner",
+                "classification": "installation-inventory",
+                "status": "confirmed",
+                "owner_bom_ref": "p",
                 "evidence": self.contract["assessments"][0]["fields"]["licenses"]["evidence"],
             }
         ]
         self.assertEqual(self.run_audit()["status"], "complete")
         self.contract["scope"]["exclusions"][0]["evidence"] = []
         self.assertIn("evidence-missing", self.codes())
+
+    def test_real_library_cannot_be_excluded_with_hashed_evidence(self):
+        self.before["components"].append(
+            {"name": "real-library", "type": "library", "bom-ref": "removed"}
+        )
+        self.contract["scope"]["exclusions"] = [
+            {
+                "bom_ref": "removed",
+                "reason": "Exclude",
+                "status": "confirmed",
+                "classification": "documentation",
+                "owner_bom_ref": "p",
+                "evidence": self.contract["assessments"][0]["fields"]["licenses"]["evidence"],
+            }
+        ]
+        self.contract["claim"] = "complete"
+        self.assertIn("exclusion-nonsoftware-ownership-unverified", self.codes())
+        self.assertIn("false-completion-claim", self.codes())
+
+    def test_rejected_declaration_blocks_complete_even_with_valid_mit(self):
+        from license_fields import normalize
+
+        self.bom["components"][0]["licenses"].append({"license": {"name": "sha256:" + "a" * 64}})
+        self.bom, _ = normalize(self.bom)
+        self.contract["assessments"][0]["fields"]["licenses"]["value"] = copy.deepcopy(
+            self.bom["components"][0]["licenses"]
+        )
+        self.contract["scope"]["license_coverage"] = "delivered-artifact"
+        self.assertEqual(self.run_audit()["status"], "partial")
+        self.assertTrue(self.run_audit()["pending"])
+        self.contract["claim"] = "complete"
+        self.assertIn("false-completion-claim", self.codes())
 
 
 if __name__ == "__main__":
