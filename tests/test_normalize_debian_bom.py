@@ -53,6 +53,50 @@ class DebianTests(unittest.TestCase):
     def test_control_continuation(self):
         self.assertEqual(fields("License: MIT\n body\n more")["License"], "MIT\nbody\nmore")
 
+    def test_control_leaf_link_requires_independent_target_owner(self):
+        raw = b"target bytes"
+        bom = {
+            "components": [
+                {
+                    "bom-ref": "pkg",
+                    "type": "library",
+                    "name": "tools",
+                    "version": "1",
+                    "purl": "pkg:deb/debian/tools@1?arch=arm64",
+                },
+                {"bom-ref": "os", "type": "operating-system", "name": "debian", "version": "12"},
+                {
+                    "bom-ref": "file",
+                    "type": "file",
+                    "name": "/var/lib/dpkg/info/tools.postinst",
+                    "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(raw).hexdigest()}],
+                },
+            ]
+        }
+        for target_owned in (False, True):
+            with self.subTest(target_owned=target_owned), tempfile.TemporaryDirectory() as d:
+                path = Path(d) / "rootfs.tar"
+                with tarfile.open(path, "w") as tar:
+                    for name, content in {
+                        "var/lib/dpkg/status": b"Package: tools\nStatus: install ok installed\nVersion: 1\nArchitecture: arm64\n",
+                        "var/lib/dpkg/info/tools.list": b"/usr/lib/target\n"
+                        if target_owned
+                        else b"/var/lib/dpkg/info/tools.postinst\n",
+                        "usr/lib/target": raw,
+                    }.items():
+                        member = tarfile.TarInfo(name)
+                        member.size = len(content)
+                        tar.addfile(member, io.BytesIO(content))
+                    member = tarfile.TarInfo("var/lib/dpkg/info/tools.postinst")
+                    member.type = tarfile.SYMTYPE
+                    member.linkname = "/usr/lib/target"
+                    tar.addfile(member)
+                out, report, _ = process(bom, path, {})
+                self.assertEqual(
+                    "file" in {c["bom-ref"] for c in out["components"]}, not target_owned
+                )
+                self.assertEqual(report["file_normalization"]["removed_count"], int(target_owned))
+
     def test_parent_symlink_ownership_and_integrity(self):
         bom = {
             "components": [

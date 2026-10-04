@@ -440,15 +440,17 @@ def process(bom, rootfs, aliases, reviewed=None):
             try:
                 read(path, follow_leaf=False)
                 direct = set(owners.get(path, []))
+                regular_leaf = True
             except ValueError:
                 direct = set()
+                regular_leaf = False
             candidate = sorted(direct | resolved_owners.get("/" + resolved, set()))
             owner = None
             kind = None
             if len(candidate) == 1:
                 owner = packages[candidate[0]]
                 kind = "dpkg-file-list-rootfs-resolved"
-            elif path.startswith("/var/lib/dpkg/info/"):
+            elif regular_leaf and path.startswith("/var/lib/dpkg/info/"):
                 control = Path(path).name.rsplit(".", 1)
                 identity = control[0].split(":", 1)
                 candidates = [
@@ -477,10 +479,10 @@ def process(bom, rootfs, aliases, reviewed=None):
                 ):
                     owner = packages[candidates[0]]
                     kind = "dpkg-control-file; scripts-remain-part-of-package"
-            elif runtime is not None and path.startswith("/opt/java/openjdk/"):
+            elif regular_leaf and runtime is not None and path.startswith("/opt/java/openjdk/"):
                 owner = runtime
                 kind = "JRE-release-directory; identity-verified-not-per-file-source-equivalence"
-            elif path == "/var/lib/dpkg/status":
+            elif regular_leaf and path == "/var/lib/dpkg/status":
                 owner = os
                 kind = "package-inventory-evidence"
             if owner:
