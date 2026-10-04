@@ -208,6 +208,9 @@ class ReviewRegressions(unittest.TestCase):
             (root / "rootfs.tar").write_bytes(b"rootfs")
             (root / "image-save.tar").write_bytes(b"image")
             Pipeline(root, root / "cache").bundle(original, bom)
+            enrichment = json.loads((root / "submission/enrichment-validation.json").read_text())
+            self.assertFalse(enrichment["enrichment_complete"])
+            self.assertEqual(enrichment["status"], "partial")
             with (root / "submission/excluded-components.csv").open() as stream:
                 rows = list(csv.reader(stream))
             self.assertEqual(rows[1][:2], ["'=1+1", "'=1+1"])
@@ -275,8 +278,12 @@ class ReviewRegressions(unittest.TestCase):
                 original, root / "rootfs.tar", {"mit": "MIT", "apache-2.0": "Apache-2.0"}
             )
             packages = {c["bom-ref"]: c for c in out["components"]}
-            self.assertEqual(packages["arm64"]["licenses"], [{"expression": "MIT"}])
-            self.assertEqual(packages["amd64"]["licenses"], [{"expression": "Apache-2.0"}])
+            from license_scope import collect
+
+            scoped = {r["owner_bom_ref"]: r for r in collect(out)}
+            self.assertEqual(scoped["arm64"]["declared_expression"], "MIT")
+            self.assertEqual(scoped["amd64"]["declared_expression"], "Apache-2.0")
+            self.assertFalse(packages["arm64"].get("licenses"))
             self.assertIn("shared", packages)
             self.assertEqual(report["file_normalization"]["removed_count"], 2)
             invalid = copy.deepcopy(original)
