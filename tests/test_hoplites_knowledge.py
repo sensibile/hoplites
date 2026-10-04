@@ -1,5 +1,7 @@
 import copy
 import json
+import io
+import tarfile
 import subprocess
 import sys
 import tempfile
@@ -7,7 +9,9 @@ import unittest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-from hoplites_knowledge import encode, prepare, report
+from hoplites_knowledge import encode, prepare, report, installation_from_tar
+from render_knowledge_report import render, draft
+from acropolis_consumer import endpoint, checked_response, ConsumerError
 
 
 class ConsumerContract(unittest.TestCase):
@@ -125,6 +129,98 @@ class ConsumerContract(unittest.TestCase):
             (path / "snapshot.json").write_text('{"tenant":"hoplites","tenant":"other"}')
             self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
             self.assertFalse((path / "failed.json").exists())
+
+    def test_tar_inventory_and_reverse_dependency_boundary(self):
+        files = {
+            "var/lib/dpkg/info/example:arm64.list": b"/.\n/usr\n/usr/share/doc/example/copyright\n",
+            "var/lib/dpkg/status": b"Package: example\nStatus: install ok installed\nArchitecture: arm64\nVersion: 1\n\nPackage: consumer\nStatus: install ok installed\nVersion: 2\nArchitecture: arm64\nDepends: example (= 1), libc6\n\nPackage: false-match\nStatus: install ok installed\nVersion: 2\nDepends: example-extra\n",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rootfs.tar"
+            with tarfile.open(path, "w") as archive:
+                for name, data in files.items():
+                    info = tarfile.TarInfo(name)
+                    info.size = len(data)
+                    archive.addfile(info, io.BytesIO(data))
+            facts, digest = installation_from_tar(path, "example", "arm64", "1")
+            self.assertTrue(facts["documentation_paths_only"])
+            self.assertEqual(
+                [d["package"] for d in facts["reverse_dependency_declarations"]], ["consumer"]
+            )
+            self.assertEqual(len(digest), 64)
+            with self.assertRaises(ValueError):
+                installation_from_tar(path, "example", "arm64", "2")
+            with tarfile.open(path, "a") as archive:
+                info = tarfile.TarInfo("./var/lib/dpkg/status")
+                info.size = 0
+                archive.addfile(info, io.BytesIO())
+            with self.assertRaises(ValueError):
+                installation_from_tar(path, "example", "arm64", "1")
+            self.assertFalse((Path(directory) / "var").exists())
+
+    def test_report_html_preserves_work_and_escapes_untrusted_sources(self):
+        value = draft(self.bundle)
+        body = render(value)
+        self.assertIn("지식 저장 전", body)
+        self.assertIn("미확인", body)
+        self.assertIn("미검증", body)
+        self.assertIn("Inspect exact shipped document terms.", body)
+        self.assertNotIn("<script", body)
+        record = next(iter(value["records"].values()))
+        record["author"]["name"] = '<script>alert("injected")</script>'
+        body = render(value)
+        self.assertNotIn("<script", body)
+        self.assertIn("&lt;script&gt;", body)
+        self.assertEqual(body, render(value))
+
+    def test_authentication_and_endpoint_claims_are_not_accepted_from_caller(self):
+        for url in (
+            "http://example.com/v1/tenants/hoplites/knowledge",
+            "http://127.0.0.1:9000/v1/tenants/other/knowledge",
+            "http://user:secret@127.0.0.1:9000/v1/tenants/hoplites/knowledge",
+            "http://127.0.0.1:9000/v1/tenants/hoplites/knowledge?redirect=other",
+        ):
+            with self.assertRaises(ConsumerError):
+                endpoint(url)
+        for value in (
+            {"ok": True, "tenant": "other", "principal": "service"},
+            {"ok": True, "tenant": "hoplites", "principal": "other"},
+            {"ok": False, "tenant": "hoplites", "principal": "service"},
+        ):
+            with self.assertRaises(ConsumerError):
+                checked_response(value, "service")
+
+    def test_same_purl_from_another_artifact_is_not_reused(self):
+        other = copy.deepcopy(next(iter(self.snapshot["graph"]["records"].values())))
+        other["id"] = "other-image"
+        other["conditions"]["image_manifest"] = "sha256:" + "d" * 64
+        self.snapshot["graph"]["records"][other["id"]] = other
+        result = report(self.bundle, self.snapshot, 1)
+        self.assertNotIn("other-image", result["records"])
+        self.assertEqual(result["excluded_condition_records"], ["other-image"])
+
+    def test_scanner_digest_is_preserved_as_observation_not_another_license_task(self):
+        row = self.scopes["records"][0]
+        row["relation"] = "scanner-evidence-reference"
+        row["evidence"]["scanner_declaration"] = {"license": {"name": "sha256:" + "b" * 64}}
+        bundle = prepare(
+            self.bom,
+            self.scopes,
+            "pkg:deb/example@1",
+            "sha256:" + "a" * 64,
+            "linux/arm64",
+            {"bom": "b" * 64, "scopes": "c" * 64},
+        )
+        records = [
+            op["record"]
+            for op in bundle["write_template"]["request"]["operations"]
+            if op["op"] == "put"
+        ]
+        self.assertFalse(any(r["kind"] == "question" for r in records))
+        observed = next(r for r in records if r["kind"] == "statement")
+        content = json.loads(observed["content"])
+        self.assertEqual(content["applicability"], "unknown")
+        self.assertIn("not license terms", content["observation"])
 
 
 if __name__ == "__main__":

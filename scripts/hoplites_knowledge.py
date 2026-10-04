@@ -4,6 +4,8 @@
 import argparse
 import hashlib
 import json
+import re
+import tarfile
 from pathlib import Path
 
 RULE = "hoplites-knowledge-consumer-v1"
@@ -37,7 +39,7 @@ def read_json(path):
     return json.loads(raw, object_pairs_hook=unique), sha(raw)
 
 
-def prepare(bom, scopes, component_purl, manifest, platform, input_hashes):
+def prepare(bom, scopes, component_purl, manifest, platform, input_hashes, installation=None):
     """Pure mapping of recorded observations; scope applicability stays in the payload."""
     if not manifest.startswith("sha256:") or not valid_digest(manifest[7:]):
         raise ValueError("immutable platform manifest required")
@@ -91,23 +93,55 @@ def prepare(bom, scopes, component_purl, manifest, platform, input_hashes):
                         for k in ("name", "version", "purl", "bom-ref", "licenses")
                     },
                     "license_scopes": rows,
+                    "installation": installation,
                 }
             ).decode(),
             "confirmed",
         )
     )
+    if installation is not None:
+        role_id = "role-" + identity
+        records.append(
+            record(
+                role_id,
+                "statement",
+                encode(
+                    {
+                        "finding": "Installed package paths and reverse dependency declarations observed in the pinned package database.",
+                        "installation": installation,
+                    }
+                ).decode(),
+                "confirmed",
+            )
+        )
+        links.append({"from": evidence_id, "to": role_id, "kind": "supports"})
     # Confirmed means the source data was observed, not that every source assertion is true.
     for row in rows:
         if not row.get("id") or not row.get("review_actions"):
             raise ValueError("scope identity and follow-up actions required")
-        identifier = "question-" + identity + "-" + row["id"]
+        scanner_name = (
+            row.get("evidence", {}).get("scanner_declaration", {}).get("license", {}).get("name")
+        )
+        digest_reference = (
+            row.get("relation") == "scanner-evidence-reference"
+            and isinstance(scanner_name, str)
+            and scanner_name.startswith("sha256:")
+            and valid_digest(scanner_name[7:])
+        )
+        identifier = (
+            ("observation-" if digest_reference else "question-") + identity + "-" + row["id"]
+        )
         records.append(
             record(
                 identifier,
-                "question",
+                "statement" if digest_reference else "question",
                 encode(
                     {
                         "scope_id": row["id"],
+                        "relation": row.get("relation"),
+                        "observation": "Scanner digest is evidence identity, not license terms."
+                        if digest_reference
+                        else None,
                         "subject": row.get("subject"),
                         "declared_expression": row.get("declared_expression"),
                         "inclusion": row.get("inclusion"),
@@ -116,7 +150,7 @@ def prepare(bom, scopes, component_purl, manifest, platform, input_hashes):
                         "next_actions": row["review_actions"],
                     }
                 ).decode(),
-                "unresolved",
+                "confirmed" if digest_reference else "unresolved",
             )
         )
         links.append({"from": evidence_id, "to": identifier, "kind": "supports"})
@@ -173,13 +207,29 @@ def report(bundle, exported, version):
     for op in bundle["write_template"]["request"]["operations"]:
         if op["op"] == "link" and op["link"] not in links:
             raise ValueError("missing exported relationship")
-    for item in records.values():
+
+    def compatible(item):
+        conditions = item.get("conditions", {})
+        artifact = bundle["artifact"]
         if (
-            item.get("subject") == bundle["subject"]
-            and item.get("conditions") != bundle["artifact"]
+            conditions.get("image_manifest") != artifact["image_manifest"]
+            or conditions.get("package_version") != artifact["package_version"]
         ):
-            raise ValueError("artifact conditions differ")
-    selected = {k: v for k, v in records.items() if v.get("subject") == bundle["subject"]}
+            return False
+        for key, value in conditions.items():
+            expected_value = artifact.get(key)
+            if key == "architecture":
+                expected_value = artifact["platform"].split("/")[-1]
+            if value != expected_value:
+                return False
+        return "platform" in conditions or "architecture" in conditions
+
+    selected = {
+        k: v for k, v in records.items() if v.get("subject") == bundle["subject"] and compatible(v)
+    }
+    excluded = sorted(
+        k for k, v in records.items() if v.get("subject") == bundle["subject"] and not compatible(v)
+    )
     # Keep incoming transitive supporting evidence, even when its subject differs.
     while True:
         extra = {l["from"] for l in links if l["kind"] == "supports" and l["to"] in selected}
@@ -207,8 +257,77 @@ def report(bundle, exported, version):
             for k, v in selected.items()
             if v["kind"] == "question" and v["assessment"] == "unresolved"
         ),
+        "excluded_condition_records": excluded,
         "legal_fulfillment": "not-assessed",
     }
+
+
+def installation_from_tar(path, package, architecture, version):
+    """Read bounded regular dpkg evidence without extracting or following tar links."""
+    wanted = {f"var/lib/dpkg/info/{package}:{architecture}.list", "var/lib/dpkg/status"}
+    captured = {}
+    rootfs_hash = hashlib.sha256()
+    with path.open("rb") as source:
+        for block in iter(lambda: source.read(1024 * 1024), b""):
+            rootfs_hash.update(block)
+        source.seek(0)
+        with tarfile.open(fileobj=source, mode="r:*") as archive:
+            for member in archive:
+                name = member.name.removeprefix("./").removeprefix("/")
+                if name not in wanted:
+                    continue
+                if name in captured or not member.isfile() or member.size > 8 * 1024 * 1024:
+                    raise ValueError("duplicate, linked or oversized dpkg evidence")
+                captured[name] = archive.extractfile(member).read()
+    if captured.keys() != wanted:
+        raise ValueError("exact dpkg evidence missing")
+    list_path = f"var/lib/dpkg/info/{package}:{architecture}.list"
+    paths = captured[list_path].decode().splitlines()
+    entries = []
+    for paragraph in captured["var/lib/dpkg/status"].decode().split("\n\n"):
+        fields = dict(
+            line.split(": ", 1)
+            for line in paragraph.splitlines()
+            if ": " in line and not line.startswith(" ")
+        )
+        if fields.get("Package"):
+            entries.append(fields)
+    owner = [
+        e for e in entries if e["Package"] == package and e.get("Architecture") == architecture
+    ]
+    if (
+        len(owner) != 1
+        or owner[0].get("Version") != version
+        or owner[0].get("Status") != "install ok installed"
+    ):
+        raise ValueError("dpkg owner identity/version/status differs")
+    dependency = re.compile(r"(?:^|[,|])\s*" + re.escape(package) + r"(?:\s|\(|:|$)")
+    dependents = [
+        {
+            k.lower(): e.get(k)
+            for k in ("Package", "Version", "Architecture", "Depends", "Pre-Depends")
+        }
+        for e in entries
+        if e.get("Status") == "install ok installed"
+        and dependency.search(e.get("Depends", "") + "," + e.get("Pre-Depends", ""))
+    ]
+    ancestors = {"/.", "/", "/usr", "/usr/share", "/usr/share/doc"}
+    docs_only = bool(paths) and all(
+        p in ancestors
+        or p == "/usr/share/doc/" + package
+        or p.startswith("/usr/share/doc/" + package + "/")
+        for p in paths
+    )
+    return {
+        "package": package,
+        "version": version,
+        "architecture": architecture,
+        "installed_paths": paths,
+        "documentation_paths_only": docs_only,
+        "reverse_dependency_declarations": sorted(dependents, key=lambda e: e["package"]),
+        "sources": [{"path": "/" + k, "sha256": sha(v)} for k, v in sorted(captured.items())],
+        "limits": "Package database declarations and file inventory; not a dependency solver or license applicability decision.",
+    }, rootfs_hash.hexdigest()
 
 
 def main():
@@ -217,6 +336,7 @@ def main():
     prep = subs.add_parser("prepare")
     for name in ("bom", "scopes", "purl", "manifest", "platform", "output"):
         prep.add_argument("--" + name, required=True)
+    prep.add_argument("--rootfs")
     view = subs.add_parser("report")
     for name in ("bundle", "snapshot", "output"):
         view.add_argument("--" + name, required=True)
@@ -226,8 +346,18 @@ def main():
         if args.command == "prepare":
             bom, bh = read_json(Path(args.bom))
             scopes, sh = read_json(Path(args.scopes))
+            hashes = {"bom": bh, "scopes": sh}
+            installation = None
+            if args.rootfs:
+                candidates = [c for c in bom.get("components", []) if c.get("purl") == args.purl]
+                if len(candidates) != 1:
+                    raise ValueError("component must resolve uniquely")
+                c = candidates[0]
+                installation, hashes["rootfs"] = installation_from_tar(
+                    Path(args.rootfs), c["name"], args.platform.split("/")[-1], c["version"]
+                )
             result = prepare(
-                bom, scopes, args.purl, args.manifest, args.platform, {"bom": bh, "scopes": sh}
+                bom, scopes, args.purl, args.manifest, args.platform, hashes, installation
             )
         else:
             bundle, _ = read_json(Path(args.bundle))
@@ -236,7 +366,7 @@ def main():
         # Never overwrite a prior report or evidence bundle.
         with Path(args.output).open("xb") as output:
             output.write(encode(result))
-    except (ValueError, KeyError, TypeError, OSError) as error:
+    except (ValueError, KeyError, TypeError, OSError, tarfile.TarError) as error:
         parser.exit(1, str(error) + "\n")
 
 
