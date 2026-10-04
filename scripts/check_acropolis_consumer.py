@@ -14,6 +14,11 @@ from hoplites_knowledge import encode, prepare, read_json
 from render_knowledge_report import render
 
 
+def require(condition, message):
+    if not condition:
+        raise AssertionError(message)
+
+
 def check(provider, output):
     spec = importlib.util.spec_from_file_location(
         "local_provider_gateway", provider / "services/knowledge/gateway.py"
@@ -66,7 +71,7 @@ def check(provider, output):
                 {"bom": "b" * 64, "scopes": "c" * 64},
             )
             first = sync(bundle, url, secret, 0, root / "first")
-            assert first["knowledge_version"] == 1
+            require(first["knowledge_version"] == 1, "initial pinned version differs")
             tests.append("authenticated import, pinned read, exact receipt and HTML")
             before = (root / "first/report.json").read_bytes()
             pinned = call(url, secret, {"command": "get", "version": 1})
@@ -90,15 +95,18 @@ def check(provider, output):
                     },
                 },
             )
-            assert changed["result"]["version"] == 2
+            require(changed["result"]["version"] == 2, "revision version differs")
             reread = call(url, secret, {"command": "get", "version": 1})
-            assert reread == pinned
+            require(reread == pinned, "historical snapshot changed")
             result = authenticated_report(bundle, reread, secret["principal"], url)
-            assert encode(result) == before
-            assert render(result) == (root / "first/report.html").read_text()
+            require(encode(result) == before, "historical JSON changed")
+            require(
+                render(result) == (root / "first/report.html").read_text(),
+                "historical HTML changed",
+            )
             tests.append("old JSON and HTML remain identical after actual version 2 commit")
             retry = sync(bundle, url, secret, 0, root / "retry")
-            assert retry["knowledge_version"] == 1
+            require(retry["knowledge_version"] == 1, "replay version differs")
             tests.append(
                 "same request replay returns original receipt/version after another commit"
             )
@@ -121,7 +129,9 @@ def check(provider, output):
                     response = connection.getresponse()
                     response.read()
                     connection.close()
-                    assert response.status == 403
+                    require(
+                        response.status == 403, "cross-tenant or anonymous request was not denied"
+                    )
             tests.append("cross-tenant and anonymous read/write/history denied through actual HTTP")
             config = gateway.configuration(service_root)
             for grant in config["grants"]:
@@ -142,9 +152,14 @@ def check(provider, output):
             else:
                 raise AssertionError("revoked write accepted")
             failure, _ = read_json(root / "denied/summary.json")
-            assert failure["status"] == "partial" and failure["write_outcome"] == "rejected"
-            assert (root / "denied/request.json").is_file()
-            assert not (root / "denied/report.html").exists()
+            require(
+                failure["status"] == "partial" and failure["write_outcome"] == "rejected",
+                "rejected write result differs",
+            )
+            require((root / "denied/request.json").is_file(), "failed request evidence missing")
+            require(
+                not (root / "denied/report.html").exists(), "failed write produced completed report"
+            )
             tests.append(
                 "denied write preserves replay request and explicit failure, without completed report"
             )

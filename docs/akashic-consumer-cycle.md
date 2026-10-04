@@ -8,7 +8,7 @@
 
 Node ARM64 manifest `sha256:24b8bc17702002d2ed0c1da9ad66c3ee507cc279d0856726662ff2b6fc35c149`의 gcc-12-base 12.2.0-14+deb12u1을 대상으로 했다. Node 조사 작업의 `artifacts/license-scope-fixed-node-002/normalized.cdx.json`, `license-scopes.json`, `rootfs.tar`를 사용한다. 원본 BOM, sources, stages 근거와 DT 검증은 기존 증거 저장소에 보존한다. 각 입력의 SHA-256을 묶음과 보고서에 고정한다.
 
-`hoplites_knowledge.py prepare --rootfs`는 tar를 디스크에 풀지 않고 실제 dpkg 설치 목록과 status를 읽는다. owner의 패키지·아키텍처·버전·설치 상태를 대조하고 파일 목록과 역방향 의존 선언을 기록한다. 연결된 tar 항목, 중복 항목, 크기 초과를 거부한다. 의존 선언은 의존성 해결기 결과나 삭제 안전성 판정이 아니다. 원문 hash의 장기 blob resolver 및 NAS 보존은 아직 구현하지 않았다.
+`hoplites_knowledge.py prepare --rootfs`는 tar를 디스크에 풀지 않고 실제 dpkg 설치 목록과 status를 읽는다. 선택한 Debian PURL의 arch qualifier로 owner의 패키지·아키텍처·버전·설치 상태를 대조하고 파일 목록과 역방향 의존 선언을 기록한다. 연결된 tar 항목, 중복 항목, 크기 초과를 거부한다. 의존 선언은 의존성 해결기 결과나 삭제 안전성 판정이 아니다. 원문 hash의 장기 blob resolver 및 NAS 보존은 아직 구현하지 않았다.
 
 실제 목록에는 공통 문서와 상위 디렉터리만 있으며 컴파일러 실행 파일 경로는 없다. libgcc-s1과 libstdc++6의 같은 버전 의존 선언을 확인했다. 이 역할 관찰을 문서별 라이선스 적용 판단과 구분한다.
 
@@ -61,3 +61,9 @@ Acropolis 담당 작업의 `akashic/docs/knowledge-tenants.md`와 `services/know
 격리 소비자 검사는 실제 적재·조회·receipt, 후속 버전 저장 뒤 이전 JSON/HTML의 동일성, 동일 요청의 최초 버전 재전달, 미인증/교차 tenant 읽기·쓰기·이력 거부, 권한 철회, 거부된 쓰기의 실패 보존을 확인했다. 테스트 자료는 실제 조사 결과로 발행하지 않는다. provider 소스는 그대로 두고 임시 private DB만 사용한다.
 
 전체 Python 단위·파일 I/O 시험은 110개 통과했다. formatting/static/syntax/SQL/config/documentation gate도 통과했다. 브라우저에서는 실제 package 역할, 의존 패키지, 적용 미확인과 다음 조치, 근거·버전 표시를 확인했다. 라이선스 자체의 적용·이행 판정, 담당자의 업무 상태 변경 UI와 제품 서버 구축은 추가 업무다.
+
+## PR #6 리뷰 보완
+
+2026-10-04 리뷰에서 dpkg 의존 필드의 접힌 줄 누락과 OCI/dpkg 아키텍처 혼용을 수정했다. 기존 control 필드 파서를 재사용하며 패키지 PURL의 명시적 arch를 사용한다. arch가 없거나 모호하면 추측하지 않고 조사 오류로 남긴다. 통합 검증의 비교는 최적화 모드에서도 실행되는 명시적 검사다.
+
+Node의 npm 디렉터리 하위 경로만으로 파일 소유권을 부여하지 않는다. 확인된 package.json 자체만 설치 메타데이터로 연결하고, 소유 파일 manifest 근거가 없는 하위 파일은 관리 목록과 미해결에 유지한다. 이전 이미지의 파일 0개 관찰은 과거 코드의 결과이며 현재 규칙의 결과가 아니다. CPython의 누락·모호한 selector, 변경된 소스 및 빌드 연계 미확인은 BOM의 unknown scope에도 보존한다. 라이선스 scope 상태가 누락되거나 허용값 밖이면 보강 완료 검사는 실패한다. 기존 이미지 전체의 DT 재업로드는 이번 코드 리뷰 수정에 포함하지 않는다.

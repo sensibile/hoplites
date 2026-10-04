@@ -83,6 +83,58 @@ class CPythonTests(unittest.TestCase):
         self.assertNotIn("LicenseRef-test", result["components"][0]["licenses"][0]["expression"])
         self.assertTrue(any("differs" in x["reason"] for x in report["unresolved"]))
 
+    def test_all_unresolved_selected_rules_survive_and_block_artifact_completion(self):
+        import tempfile
+        from license_scope import collect
+        from validate_enrichment import audit as validate, draft
+
+        for problem in ("missing", "ambiguous", "changed-source", "missing-build"):
+            with self.subTest(problem=problem), tempfile.TemporaryDirectory() as directory:
+                bom, installed, source, rules, env = self.fixture()
+                bom["components"][0]["type"] = "application"
+                # Keep a canonical known declaration so only unresolved inclusion blocks completion.
+                rules[0]["expression"] = "MIT"
+                if problem == "missing":
+                    installed.pop("usr/local/lib/python3.13/a.py")
+                elif problem == "ambiguous":
+                    installed["usr/local/lib/python3.13/lib-dynload/a.other.so"] = b"other"
+                elif problem == "changed-source":
+                    installed["usr/local/lib/python3.13/a.py"] = b"patched"
+                else:
+                    installed["usr/local/lib/python3.13/_sysconfigdata_test.py"] = (
+                        b"build_time_vars = {}"
+                    )
+                out, report, notices = audit(bom, installed, source, rules, "archive", env)
+                rows = collect(out)
+                self.assertEqual({r["subject"] for r in rows}, {"py", "c"})
+                self.assertTrue(any(r["inclusion"] == "unknown" for r in rows))
+                self.assertTrue(report["unresolved"])
+                self.assertTrue(notices)
+                root = Path(directory)
+                (root / "notice").write_bytes(b"reviewed declaration")
+                contract = draft(bom, out, "input", "output")
+                contract["purpose"] = {
+                    "consumer": "reviewer",
+                    "decision": "identify shipped terms",
+                    "required_output": "scoped licenses",
+                }
+                contract["claim"] = "complete"
+                for assessment in contract["assessments"]:
+                    assessment["fields"]["licenses"].update(
+                        status="confirmed",
+                        finding="Project declaration checked",
+                        evidence=[
+                            {
+                                "path": "notice",
+                                "sha256": sha(b"reviewed declaration"),
+                                "supports": "project declaration",
+                            }
+                        ],
+                    )
+                checked = validate(bom, out, contract, root, "input", "output")
+                self.assertFalse(checked["enrichment_complete"])
+                self.assertIn("false-completion-claim", {e["code"] for e in checked["errors"]})
+
     def test_wrong_image_source_hash_rejected(self):
         bom, installed, source, rules, env = self.fixture()
         env["PYTHON_SHA256"] = "other"

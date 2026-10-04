@@ -45,6 +45,33 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         raise ValueError("Invalid CPython build metadata")
     build = variables[0]
     additions, pending, notices = [], [], {configs[0]: installed[configs[0]]}
+    unresolved_rules = []
+
+    def retain_unresolved(rule, reason, next_action, paths):
+        evidence = {
+            "source_path": rule["source_path"],
+            "notice_path": rule["notice_path"],
+            "source_sha256": rule["source_sha256"],
+            "notice_sha256": rule["notice_sha256"],
+            "installed_selector": rule["installed_selector"],
+            "candidate_paths": paths,
+            "reason": reason,
+            "next_action": next_action,
+        }
+        unresolved_rules.append(
+            scope_record(
+                python,
+                rule["name"],
+                "installed-source" if rule["mode"] == "source-match" else "compiled-extension",
+                rule["expression"],
+                "unknown",
+                "unknown",
+                evidence,
+            )
+        )
+        notices["cpython/" + rule["notice_path"]] = source[rule["notice_path"]]
+        notices["cpython/" + rule["source_path"]] = source[rule["source_path"]]
+
     for r in selected:
         raw = source.get(r["source_path"])
         notice = source.get(r["notice_path"])
@@ -57,6 +84,12 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
             raise ValueError("CPython reviewed source/notice hash mismatch")
         paths = [p for p in installed if fnmatch.fnmatchcase(p, base + r["installed_selector"])]
         if len(paths) != 1:
+            retain_unresolved(
+                r,
+                "installed artifact selector missing/ambiguous",
+                "Review exact module build and installed layout",
+                paths,
+            )
             pending.append(
                 {
                     "name": r["name"],
@@ -68,6 +101,12 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         path = paths[0]
         if r["mode"] == "source-match":
             if installed[path] != raw:
+                retain_unresolved(
+                    r,
+                    "installed source differs from pinned upstream",
+                    "Review installed patch and license header",
+                    paths,
+                )
                 pending.append(
                     {
                         "name": r["name"],
@@ -80,6 +119,12 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
             status = "confirmed-source-bytes-and-notice"
         elif r["mode"] == "binary-build":
             if r["build_indicator"] not in str(build.get(r["build_key"], "")):
+                retain_unresolved(
+                    r,
+                    "build indicator absent",
+                    "Check external versus bundled library build",
+                    paths,
+                )
                 pending.append(
                     {
                         "name": r["name"],
@@ -129,7 +174,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
             },
         )
         for r in additions
-    ]
+    ] + unresolved_rules
     scope_attach(
         python,
         scoped,

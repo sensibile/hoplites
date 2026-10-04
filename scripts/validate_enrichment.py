@@ -233,10 +233,17 @@ def audit(before, bom, contract=None, root=None, before_hash=None, bom_hash=None
                 or row["relation"] == "scanner-evidence-reference"
             ):
                 continue
+            if row.get("inclusion") not in (
+                "confirmed",
+                "inferred",
+                "unknown",
+                "external",
+            ) or row.get("applicability") not in ("confirmed", "inferred", "unknown"):
+                error("artifact-license-scope-state-invalid", row["id"])
             if (
-                row["inclusion"] == "unknown"
-                or row["applicability"] == "unknown"
-                or not row["declared_expression"]
+                row.get("inclusion") not in ("confirmed", "inferred", "external")
+                or row.get("applicability") not in ("confirmed", "inferred")
+                or not row.get("declared_expression")
             ):
                 pending.append(
                     {

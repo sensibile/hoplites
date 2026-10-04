@@ -12,6 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 from hoplites_knowledge import encode, prepare, report, installation_from_tar
 from render_knowledge_report import render, draft
 from acropolis_consumer import endpoint, checked_response, ConsumerError
+from hoplites_knowledge import component_architecture
 
 
 class ConsumerContract(unittest.TestCase):
@@ -133,7 +134,7 @@ class ConsumerContract(unittest.TestCase):
     def test_tar_inventory_and_reverse_dependency_boundary(self):
         files = {
             "var/lib/dpkg/info/example:arm64.list": b"/.\n/usr\n/usr/share/doc/example/copyright\n",
-            "var/lib/dpkg/status": b"Package: example\nStatus: install ok installed\nArchitecture: arm64\nVersion: 1\n\nPackage: consumer\nStatus: install ok installed\nVersion: 2\nArchitecture: arm64\nDepends: example (= 1), libc6\n\nPackage: false-match\nStatus: install ok installed\nVersion: 2\nDepends: example-extra\n",
+            "var/lib/dpkg/status": b"Package: example\nStatus: install ok installed\nArchitecture: arm64\nVersion: 1\n\nPackage: consumer\nStatus: install ok installed\nVersion: 2\nArchitecture: arm64\nDepends: libc6,\n example (= 1)\n\nPackage: pre-consumer\nStatus: install ok installed\nVersion: 2\nArchitecture: arm64\nPre-Depends: libc6,\n\texample (= 1)\n\nPackage: false-match\nStatus: install ok installed\nVersion: 2\nDepends: example-extra\n",
         }
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "rootfs.tar"
@@ -145,7 +146,8 @@ class ConsumerContract(unittest.TestCase):
             facts, digest = installation_from_tar(path, "example", "arm64", "1")
             self.assertTrue(facts["documentation_paths_only"])
             self.assertEqual(
-                [d["package"] for d in facts["reverse_dependency_declarations"]], ["consumer"]
+                [d["package"] for d in facts["reverse_dependency_declarations"]],
+                ["consumer", "pre-consumer"],
             )
             self.assertEqual(len(digest), 64)
             with self.assertRaises(ValueError):
@@ -157,6 +159,76 @@ class ConsumerContract(unittest.TestCase):
             with self.assertRaises(ValueError):
                 installation_from_tar(path, "example", "arm64", "1")
             self.assertFalse((Path(directory) / "var").exists())
+
+    def test_cli_uses_selected_debian_architecture_for_multiarch_and_arm_variant(self):
+        script = Path(__file__).parents[1] / "scripts/hoplites_knowledge.py"
+        for arch, platform in (("i386", "linux/amd64"), ("armhf", "linux/arm/v7")):
+            with self.subTest(arch=arch), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                bom = copy.deepcopy(self.bom)
+                purl = "pkg:deb/debian/example@1?arch=" + arch
+                bom["components"][0]["purl"] = purl
+                (root / "bom.json").write_bytes(encode(bom))
+                (root / "scopes.json").write_bytes(encode(self.scopes))
+                with tarfile.open(root / "rootfs.tar", "w") as archive:
+                    for name, raw in {
+                        "var/lib/dpkg/info/example:"
+                        + arch
+                        + ".list": b"/usr/share/doc/example/copyright\n",
+                        "var/lib/dpkg/status": (
+                            "Package: example\nStatus: install ok installed\nArchitecture: "
+                            + arch
+                            + "\nVersion: 1\n"
+                        ).encode(),
+                    }.items():
+                        info = tarfile.TarInfo(name)
+                        info.size = len(raw)
+                        archive.addfile(info, io.BytesIO(raw))
+                run = subprocess.run(
+                    [
+                        sys.executable,
+                        str(script),
+                        "prepare",
+                        "--bom",
+                        str(root / "bom.json"),
+                        "--scopes",
+                        str(root / "scopes.json"),
+                        "--purl",
+                        purl,
+                        "--manifest",
+                        "sha256:" + "a" * 64,
+                        "--platform",
+                        platform,
+                        "--rootfs",
+                        str(root / "rootfs.tar"),
+                        "--output",
+                        str(root / "bundle.json"),
+                    ],
+                    capture_output=True,
+                )
+                self.assertEqual(run.returncode, 0, run.stderr)
+                records = json.loads((root / "bundle.json").read_text())["write_template"][
+                    "request"
+                ]["operations"]
+                installation = json.loads(records[0]["record"]["content"])["installation"]
+                self.assertEqual(installation["architecture"], arch)
+        for purl in (
+            "pkg:deb/debian/example@1",
+            "pkg:deb/debian/example@1?arch=",
+            "pkg:deb/debian/example@1?arch=arm64&arch=i386",
+        ):
+            with self.assertRaises(ValueError):
+                component_architecture({"purl": purl})
+
+    def test_verifier_comparisons_cannot_be_removed_by_optimization(self):
+        scripts = str(Path(__file__).parents[1] / "scripts")
+        code = "import sys; sys.path.insert(0, sys.argv[1]); from check_acropolis_consumer import require; require(False, 'intentional mismatch')"
+        for flags in ([], ["-O"]):
+            run = subprocess.run(
+                [sys.executable] + flags + ["-c", code, scripts], capture_output=True
+            )
+            self.assertNotEqual(run.returncode, 0)
+            self.assertIn(b"intentional mismatch", run.stderr)
 
     def test_report_html_preserves_work_and_escapes_untrusted_sources(self):
         value = draft(self.bundle)

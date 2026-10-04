@@ -213,8 +213,19 @@ def process(bom, files):
         if [h["content"] for h in c.get("hashes", []) if h["alg"] == "SHA-256"] != [sha(raw)]:
             continue
         matches = [root for root in roots if path.startswith(root + "/")]
-        owner = roots[max(matches, key=len)] if matches else None
-        kind = "verified-installed-package-json-directory"
+        root = max(matches, key=len) if matches else None
+        # A directory and matching bytes do not establish ownership of descendants.
+        owner = roots[root] if root and path == root + "/package.json" else None
+        kind = "verified-installed-package-json"
+        if root and owner is None:
+            pending.append(
+                {
+                    "component": c["bom-ref"],
+                    "path": path,
+                    "reason": "npm descendant ownership unverified; file retained",
+                    "next": "Compare a verified package file manifest or identify nested software",
+                }
+            )
         if (
             owner is None
             and node

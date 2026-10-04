@@ -7,6 +7,8 @@ import json
 import re
 import tarfile
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+from normalize_debian_bom import fields
 
 RULE = "hoplites-knowledge-consumer-v1"
 TENANT = "hoplites"
@@ -262,6 +264,19 @@ def report(bundle, exported, version):
     }
 
 
+def component_architecture(component):
+    """Use the selected Debian package identity, including multiarch packages."""
+    purl = component.get("purl", "")
+    values = parse_qs(urlsplit(purl).query, keep_blank_values=True).get("arch", [])
+    if (
+        not purl.startswith("pkg:deb/")
+        or len(values) != 1
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]*", values[0])
+    ):
+        raise ValueError("unambiguous Debian PURL architecture required for dpkg evidence")
+    return values[0]
+
+
 def installation_from_tar(path, package, architecture, version):
     """Read bounded regular dpkg evidence without extracting or following tar links."""
     wanted = {f"var/lib/dpkg/info/{package}:{architecture}.list", "var/lib/dpkg/status"}
@@ -285,13 +300,9 @@ def installation_from_tar(path, package, architecture, version):
     paths = captured[list_path].decode().splitlines()
     entries = []
     for paragraph in captured["var/lib/dpkg/status"].decode().split("\n\n"):
-        fields = dict(
-            line.split(": ", 1)
-            for line in paragraph.splitlines()
-            if ": " in line and not line.startswith(" ")
-        )
-        if fields.get("Package"):
-            entries.append(fields)
+        entry = fields(paragraph)
+        if entry.get("Package"):
+            entries.append(entry)
     owner = [
         e for e in entries if e["Package"] == package and e.get("Architecture") == architecture
     ]
@@ -354,7 +365,7 @@ def main():
                     raise ValueError("component must resolve uniquely")
                 c = candidates[0]
                 installation, hashes["rootfs"] = installation_from_tar(
-                    Path(args.rootfs), c["name"], args.platform.split("/")[-1], c["version"]
+                    Path(args.rootfs), c["name"], component_architecture(c), c["version"]
                 )
             result = prepare(
                 bom, scopes, args.purl, args.manifest, args.platform, hashes, installation

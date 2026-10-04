@@ -66,7 +66,7 @@ class NodeViewTests(unittest.TestCase):
         original = json.dumps(bom)
         result, report, sources = process(bom, files)
         self.assertEqual(json.dumps(bom), original)
-        self.assertEqual(len(result["components"]), 3)
+        self.assertEqual(len(result["components"]), 4)
         self.assertEqual(result["components"][0]["licenses"], [{"license": {"id": "MIT"}}])
         from license_scope import collect
 
@@ -74,9 +74,41 @@ class NodeViewTests(unittest.TestCase):
         owners = [
             x["ownership"]["owner_bom_ref"] for x in report["file_normalization"]["removed_files"]
         ]
-        self.assertEqual(owners, ["node", "a"])
+        self.assertEqual(owners, ["node"])
+        self.assertTrue(
+            any(c.get("bom-ref", "").endswith("/a/index.js") for c in result["components"])
+        )
         self.assertIn("usr/local/LICENSE", sources)
         self.assertTrue(report["unresolved"])
+
+    def test_unscanned_nested_software_is_retained_without_directory_ownership(self):
+        bom, files = self.fixture()
+        path = "/usr/local/lib/node_modules/npm/node_modules/unscanned/index.js"
+        files[path] = b"vendored software"
+        bom["components"].append(
+            {
+                "bom-ref": path,
+                "name": path,
+                "type": "file",
+                "hashes": [{"alg": "SHA-256", "content": hashlib.sha256(files[path]).hexdigest()}],
+            }
+        )
+        manifest = "/usr/local/lib/node_modules/npm/package.json"
+        bom["components"].append(
+            {
+                "bom-ref": manifest,
+                "name": manifest,
+                "type": "file",
+                "hashes": [
+                    {"alg": "SHA-256", "content": hashlib.sha256(files[manifest]).hexdigest()}
+                ],
+            }
+        )
+        result, report, _ = process(bom, files)
+        refs = {c["bom-ref"] for c in result["components"]}
+        self.assertIn(path, refs)
+        self.assertNotIn(manifest, refs)
+        self.assertTrue(any(r.get("path") == path for r in report["unresolved"]))
 
     def test_version_conflict_fails(self):
         bom, files = self.fixture()

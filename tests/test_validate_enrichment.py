@@ -128,6 +128,26 @@ class EnrichmentValidationTests(unittest.TestCase):
         self.contract["claim"] = "complete"
         self.assertIn("false-completion-claim", self.codes())
 
+    def test_missing_and_invalid_scope_states_never_complete(self):
+        for field in ("inclusion", "applicability"):
+            for value in (None, "", "unexpected", [], {}):
+                with self.subTest(field=field, value=value):
+                    c = self.bom["components"][0]
+                    row = record(
+                        c, "target", "binary-embedded-code", "MIT", "confirmed", "confirmed", {}
+                    )
+                    if value is None:
+                        row.pop(field)
+                    else:
+                        row[field] = value
+                    attach(c, [row], "project declaration")
+                    result = self.run_audit()
+                    self.assertFalse(result["enrichment_complete"])
+                    self.assertIn(
+                        "artifact-license-scope-state-invalid",
+                        {e["code"] for e in result["errors"]},
+                    )
+
     def test_changed_artifact_or_tampered_source_is_rejected(self):
         self.contract["output_sha256"] = "different"
         self.assertIn("artifact-hash-mismatch", self.codes())
