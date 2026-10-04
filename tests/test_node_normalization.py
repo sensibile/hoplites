@@ -24,6 +24,7 @@ class NodeViewTests(unittest.TestCase):
         self.assertTrue(all(change[k] for k in ("rationale", "limitations", "use_risk")))
         scope = next(r for r in collect(out) if r["owner_bom_ref"] == "npm")
         self.assertEqual(scope["applicability"], "unknown")
+        self.assertEqual(collect(process(out, files)[0]), collect(out))
 
     def fixture(self):
         files = {

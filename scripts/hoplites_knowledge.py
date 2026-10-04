@@ -51,7 +51,9 @@ def prepare(bom, scopes, component_purl, manifest, platform, input_hashes, insta
     if len(components) != 1:
         raise ValueError("component must resolve uniquely")
     component = components[0]
-    if scopes.get("source_bom_sha256") != input_hashes.get("bom"):
+    if not valid_digest(input_hashes.get("bom")) or scopes.get(
+        "source_bom_sha256"
+    ) != input_hashes.get("bom"):
         raise ValueError("scope export source BOM hash differs")
     rows = [r for r in scopes.get("records", []) if r.get("owner_bom_ref") == component["bom-ref"]]
     if not rows:

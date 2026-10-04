@@ -111,6 +111,17 @@ class ConsumerContract(unittest.TestCase):
                     "linux/arm64",
                     {"bom": "b" * 64, "scopes": "c" * 64},
                 )
+        scopes = copy.deepcopy(self.scopes)
+        scopes.pop("source_bom_sha256")
+        with self.assertRaises(ValueError):
+            prepare(
+                self.bom,
+                scopes,
+                "pkg:deb/example@1",
+                "sha256:" + "a" * 64,
+                "linux/arm64",
+                {"scopes": "c" * 64},
+            )
 
     def test_pinned_report_is_unchanged_after_another_revision(self):
         first = encode(report(self.bundle, self.snapshot, 1))

@@ -269,6 +269,7 @@ def process(bom, files):
                         },
                     )
                 )
+                existing = list({r["id"]: r for r in existing}.values())
                 scope_attach(
                     c,
                     existing,
