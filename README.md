@@ -50,6 +50,8 @@ python3 scripts/image_pipeline.py eclipse-temurin:21-jre-noble --upload --vex
 - [결과 계약](contracts/README.md)
 - [Dependency-Track 검토](docs/dependency-track.md)
 
+- [Python slim 1차 반영 범위](docs/python-slim-phase-one.md)
+
 ## 열린 이슈
 
 - [Simple Launcher의 관리·표시 단위](docs/open-issues/simple-launcher.md) — 처리 방침 미결정
