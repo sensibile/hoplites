@@ -275,6 +275,12 @@ class EnrichmentValidationTests(unittest.TestCase):
             }
         ]
         self.assertEqual(self.run_audit()["status"], "complete")
+        for field, value in (("type", "library"), ("purl", "pkg:npm/discovered@1")):
+            promoted = copy.deepcopy(self.before["components"][-1])
+            promoted[field] = value
+            self.bom["components"].append(promoted)
+            self.assertIn("exclusion-nonsoftware-ownership-unverified", self.codes())
+            self.bom["components"].pop()
         self.contract["scope"]["exclusions"][0]["evidence"] = []
         self.assertIn("evidence-missing", self.codes())
 

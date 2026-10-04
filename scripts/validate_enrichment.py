@@ -166,6 +166,7 @@ def audit(before, bom, contract=None, root=None, before_hash=None, bom_hash=None
             error("exclusion-purpose-missing", ref)
         evidence(exclusion.get("evidence", []), ref)
         component = source.get(ref, {})
+        surviving = output.get(ref)
         owner = output.get(exclusion.get("owner_bom_ref"), {})
         hashes = {
             h.get("content") for h in component.get("hashes", []) if h.get("alg") == "SHA-256"
@@ -173,6 +174,9 @@ def audit(before, bom, contract=None, root=None, before_hash=None, bom_hash=None
         if (
             component.get("type") != "file"
             or component.get("purl")
+            or (
+                surviving is not None and (surviving.get("type") != "file" or surviving.get("purl"))
+            )
             or exclusion.get("classification") not in {"installation-inventory", "documentation"}
             or exclusion.get("status") != "confirmed"
             or not owner
