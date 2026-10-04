@@ -9,10 +9,53 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parents[1] / "scripts"))
 from validate_enrichment import audit, draft
-from license_scope import attach, record
+from license_scope import attach, record, record_id
 
 
 class EnrichmentValidationTests(unittest.TestCase):
+    def test_cli_duplicate_bom_keys_never_complete(self):
+        script = Path(__file__).parents[1] / "scripts/validate_enrichment.py"
+        for which in ("before", "bom", "contract"):
+            before = self.root / "before.json"
+            output = self.root / "bom.json"
+            contract = self.root / "contract.json"
+            before.write_text(json.dumps(self.before))
+            output.write_text(json.dumps(self.bom))
+            payload = copy.deepcopy(self.contract)
+            payload["claim"] = "complete"
+            paths = {"before": before, "bom": output, "contract": contract}
+            if which != "contract":
+                paths[which].write_text(
+                    '{"components":[{"bom-ref":"hidden","type":"library"}],"components":'
+                    + json.dumps(self.bom["components"])
+                    + "}"
+                )
+            payload.update(
+                input_sha256=hashlib.sha256(before.read_bytes()).hexdigest(),
+                output_sha256=hashlib.sha256(output.read_bytes()).hexdigest(),
+            )
+            contract.write_text(json.dumps(payload))
+            if which == "contract":
+                contract.write_text('{"claim":"partial",' + contract.read_text()[1:])
+            report_path = self.root / (which + "-report.json")
+            args = [
+                sys.executable,
+                str(script),
+                "check",
+                "--before",
+                str(before),
+                "--bom",
+                str(output),
+                "--contract",
+                str(contract),
+                "--report",
+                str(report_path),
+            ]
+            self.assertEqual(subprocess.run(args, capture_output=True).returncode, 2)
+            result = json.loads(report_path.read_text())
+            self.assertFalse(result["enrichment_complete"])
+            self.assertIn("duplicate JSON key", result["errors"][0]["detail"])
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
@@ -140,6 +183,7 @@ class EnrichmentValidationTests(unittest.TestCase):
                         row.pop(field)
                     else:
                         row[field] = value
+                    row["id"] = record_id(row)
                     attach(c, [row], "project declaration")
                     result = self.run_audit()
                     self.assertFalse(result["enrichment_complete"])

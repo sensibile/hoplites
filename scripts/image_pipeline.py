@@ -468,6 +468,7 @@ class Pipeline:
             self.out / "license-scopes.json",
             {
                 "rule_version": "license-scope-v1",
+                "source_bom_sha256": digest(self.out / "normalized.cdx.json"),
                 "records": collect_scopes(bom),
                 "fulfillment": "not-verified",
             },

@@ -8,6 +8,8 @@
 
 Node ARM64 manifest `sha256:24b8bc17702002d2ed0c1da9ad66c3ee507cc279d0856726662ff2b6fc35c149`의 gcc-12-base 12.2.0-14+deb12u1을 대상으로 했다. Node 조사 작업의 `artifacts/license-scope-fixed-node-002/normalized.cdx.json`, `license-scopes.json`, `rootfs.tar`를 사용한다. 원본 BOM, sources, stages 근거와 DT 검증은 기존 증거 저장소에 보존한다. 각 입력의 SHA-256을 묶음과 보고서에 고정한다.
 
+현재 scope export는 `source_bom_sha256`으로 정확한 normalized BOM 파일에 연결되며, 선택된 행의 component/version도 현재 BOM과 일치해야 한다. 이 바인딩이 없는 과거 export는 그대로 적재하지 않는다. 원본 증적을 보존하고 검증된 BOM에서 새 export를 생성해야 한다. HTML 요약은 요청 subject와 PURL이 일치하는 하나의 evidence record에서 구성요소와 설치 정보를 함께 가져온다. 다른 subject의 지원 근거는 요약의 대상 정보로 사용하지 않는다.
+
 `hoplites_knowledge.py prepare --rootfs`는 tar를 디스크에 풀지 않고 실제 dpkg 설치 목록과 status를 읽는다. 선택한 Debian PURL의 arch qualifier로 owner의 패키지·아키텍처·버전·설치 상태를 대조하고 파일 목록과 역방향 의존 선언을 기록한다. 연결된 tar 항목, 중복 항목, 크기 초과를 거부한다. 의존 선언은 의존성 해결기 결과나 삭제 안전성 판정이 아니다. 원문 hash의 장기 blob resolver 및 NAS 보존은 아직 구현하지 않았다.
 
 실제 목록에는 공통 문서와 상위 디렉터리만 있으며 컴파일러 실행 파일 경로는 없다. libgcc-s1과 libstdc++6의 같은 버전 의존 선언을 확인했다. 이 역할 관찰을 문서별 라이선스 적용 판단과 구분한다.

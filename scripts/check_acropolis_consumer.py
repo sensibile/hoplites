@@ -50,10 +50,13 @@ def check(provider, output):
             }
             scopes = {
                 "rule_version": "contract-test-v1",
+                "source_bom_sha256": "b" * 64,
                 "records": [
                     {
                         "id": "notice",
                         "owner_bom_ref": "sample",
+                        "component": "sample",
+                        "version": "1",
                         "subject": "notice",
                         "inclusion": "inferred",
                         "applicability": "unknown",

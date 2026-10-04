@@ -10,6 +10,11 @@ RULE_VERSION = "license-scope-v1"
 PREFIX = "hoplites:license-scope:"
 
 
+def record_id(value):
+    content = {k: v for k, v in value.items() if k not in {"id", "review_actions"}}
+    return hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()[:24]
+
+
 def record(component, subject, relation, expression, inclusion, applicability, evidence):
     value = {
         "owner_bom_ref": component["bom-ref"],
@@ -22,7 +27,7 @@ def record(component, subject, relation, expression, inclusion, applicability, e
         "fulfillment": "not-verified",
         "reviewer": "unassigned",
     }
-    value["id"] = hashlib.sha256(json.dumps(value, sort_keys=True).encode()).hexdigest()[:24]
+    value["id"] = record_id(value)
     actions = []
     if inclusion == "unknown":
         actions.append(
@@ -91,7 +96,11 @@ def collect(bom):
                     for _, value in parts
                 )
             )
-            if r["owner_bom_ref"] != c["bom-ref"] or r["id"] != identifier:
+            if (
+                r["owner_bom_ref"] != c["bom-ref"]
+                or r["id"] != identifier
+                or record_id(r) != identifier
+            ):
                 raise ValueError("License scope owner or identity mismatch")
             rows.append(dict(r, component=c["name"], version=c.get("version")))
     return rows

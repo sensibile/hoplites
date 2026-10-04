@@ -76,10 +76,17 @@ def render(value):
             item = json.loads(r["content"])
         except ValueError:
             item = {}
-        if isinstance(item, dict):
+        if isinstance(item, dict) and r.get("subject") == value["subject"]:
             evidence.append(item)
-    component = next((e["component"] for e in evidence if "component" in e), {})
-    installation = next((e["installation"] for e in evidence if e.get("installation")), None)
+    targeted = [
+        e
+        for e in evidence
+        if isinstance(e.get("component"), dict) and e["component"].get("purl") == value["subject"]
+    ]
+    if len(targeted) != 1:
+        raise ValueError("target component evidence must resolve uniquely")
+    component = targeted[0]["component"]
+    installation = targeted[0].get("installation")
     title = component.get("name", "구성요소") + " 조사 보고서"
     parts = [
         f"""<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{esc(title)}</title>

@@ -10,6 +10,14 @@ from elf_linkage import inspect
 
 
 class LicenseScopeTests(unittest.TestCase):
+    def test_changed_scope_content_with_copied_id_is_rejected(self):
+        c = {"name": "runtime", "bom-ref": "owner"}
+        r = record(c, "target", "binary-embedded-code", "MIT", "unknown", "unknown", {})
+        r.update(inclusion="confirmed", applicability="confirmed")
+        attach(c, [r], "project")
+        with self.assertRaisesRegex(ValueError, "identity mismatch"):
+            collect({"components": [c]})
+
     def test_same_terms_preserve_distinct_targets_and_review_actions(self):
         component = {
             "name": "runtime",

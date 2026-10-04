@@ -9,7 +9,7 @@ import re
 import tarfile
 from pathlib import PurePosixPath
 from normalize_syft_bom import normalize
-from license_scope import record as scope_record, attach as scope_attach
+from license_scope import record as scope_record, attach as scope_attach, collect as collect_scopes
 from elf_linkage import inspect as inspect_elf
 from elf_linkage import UnsupportedEncoding
 
@@ -242,10 +242,45 @@ def process(bom, files):
                         "after": proposed,
                         "source_path": root + "/LICENSE",
                         "source_sha256": sha(files[root + "/LICENSE"]),
-                        "assessment": "verified-installed-Apache-2.0-text",
+                        "assessment": "inferred-Apache-2.0-from-installed-header",
+                        "rationale": "Installed package declaration and license header resemble Apache-2.0",
+                        "limitations": "Full installed terms have not been matched to reviewed text",
+                        "use_risk": "Downstream modifications may add different conditions; review full installed terms",
                     }
                 )
                 c["licenses"] = proposed
+                existing = [
+                    {k: v for k, v in r.items() if k not in {"component", "version"}}
+                    for r in collect_scopes({"components": [c]})
+                ]
+                existing.append(
+                    scope_record(
+                        c,
+                        "npm project terms",
+                        "project-declaration",
+                        "Apache-2.0",
+                        "confirmed",
+                        "unknown",
+                        {
+                            "notice_path": root + "/LICENSE",
+                            "notice_sha256": sha(files[root + "/LICENSE"]),
+                            "assessment": "inferred-from-header",
+                            "next_action": "Review full installed terms against reviewed Apache-2.0 text",
+                        },
+                    )
+                )
+                scope_attach(
+                    c,
+                    existing,
+                    "Apache-2.0 inferred from installed declaration/header; full terms unverified",
+                )
+                pending.append(
+                    {
+                        "component": c["bom-ref"],
+                        "reason": "npm Apache project terms inferred; full-text review unresolved",
+                        "next": "Review complete shipped license and downstream changes",
+                    }
+                )
     for c in result["components"]:
         if c.get("type") != "file" or c["name"] not in files:
             continue

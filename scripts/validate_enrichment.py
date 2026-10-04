@@ -17,6 +17,15 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def unique_object(pairs):
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON key: " + key)
+        result[key] = value
+    return result
+
+
 def text(value):
     return isinstance(value, str) and bool(value.strip())
 
@@ -301,7 +310,10 @@ def main():
         parser.error("--report is required for check")
     try:
         before_raw, bom_raw = args.before.read_bytes(), args.bom.read_bytes()
-        before, bom = json.loads(before_raw), json.loads(bom_raw)
+        before, bom = (
+            json.loads(before_raw, object_pairs_hook=unique_object),
+            json.loads(bom_raw, object_pairs_hook=unique_object),
+        )
         before_hash, bom_hash = (
             hashlib.sha256(before_raw).hexdigest(),
             hashlib.sha256(bom_raw).hexdigest(),
@@ -316,7 +328,7 @@ def main():
         report = audit(
             before,
             bom,
-            json.loads(args.contract.read_bytes()),
+            json.loads(args.contract.read_bytes(), object_pairs_hook=unique_object),
             args.evidence_root or args.contract.parent,
             before_hash,
             bom_hash,

@@ -9,6 +9,22 @@ from normalize_node_bom import process
 
 
 class NodeViewTests(unittest.TestCase):
+    def test_modified_apache_header_is_inferred_and_unresolved(self):
+        from license_scope import collect
+
+        bom, files = self.fixture()
+        path = "/usr/local/lib/node_modules/npm/package.json"
+        files[path] = b'{"name":"npm","version":"1","license":"Apache 2.0"}'
+        files["/usr/local/lib/node_modules/npm/LICENSE"] = (
+            b"Apache License\nVersion 2.0, January 2004\nAdditional downstream conditions."
+        )
+        out, report, _ = process(bom, files)
+        change = next(c for c in report["changes"] if c["bom_ref"] == "npm")
+        self.assertTrue(change["assessment"].startswith("inferred-"))
+        self.assertTrue(all(change[k] for k in ("rationale", "limitations", "use_risk")))
+        scope = next(r for r in collect(out) if r["owner_bom_ref"] == "npm")
+        self.assertEqual(scope["applicability"], "unknown")
+
     def fixture(self):
         files = {
             "/usr/local/include/node/node_version.h": b"#define NODE_MAJOR_VERSION 24\n#define NODE_MINOR_VERSION 21\n#define NODE_PATCH_VERSION 0\n",

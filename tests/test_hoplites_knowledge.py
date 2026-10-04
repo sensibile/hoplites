@@ -1,4 +1,5 @@
 import copy
+import hashlib
 import json
 import io
 import tarfile
@@ -29,10 +30,13 @@ class ConsumerContract(unittest.TestCase):
         }
         self.scopes = {
             "rule_version": "license-scope-v1",
+            "source_bom_sha256": "b" * 64,
             "records": [
                 {
                     "id": "scope-1",
                     "owner_bom_ref": "component-1",
+                    "component": "example",
+                    "version": "1",
                     "subject": "notice",
                     "declared_expression": "MIT",
                     "inclusion": "inferred",
@@ -71,6 +75,42 @@ class ConsumerContract(unittest.TestCase):
         self.assertEqual(content["applicability"], "unknown")
         self.assertEqual(content["fulfillment"], "not-verified")
         self.assertTrue(content["next_actions"])
+
+    def test_summary_uses_same_target_evidence_not_earlier_support(self):
+        value = report(self.bundle, self.snapshot, 1)
+        other = {
+            **copy.deepcopy(next(r for r in value["records"].values() if r["kind"] == "evidence")),
+            "kind": "evidence",
+            "subject": "pkg:deb/other@1",
+            "content": json.dumps(
+                {
+                    "component": {"name": "wrong-package", "purl": "pkg:deb/other@1"},
+                    "installation": {"paths": ["wrong-inventory"]},
+                }
+            ),
+        }
+        value["records"] = {"old": other, **value["records"]}
+        html = render(value)
+        self.assertIn("example 조사 보고서", html)
+        self.assertNotIn("wrong-package 조사 보고서", html)
+        self.assertNotIn("설치된 패키지 DB에서 이 패키지를 요구하는 항목:", html)
+
+    def test_scope_export_revision_and_owner_identity_must_match(self):
+        for mutation in ("hash", "component", "version"):
+            scopes = copy.deepcopy(self.scopes)
+            if mutation == "hash":
+                scopes["source_bom_sha256"] = "d" * 64
+            else:
+                scopes["records"][0][mutation] = "stale"
+            with self.assertRaises(ValueError):
+                prepare(
+                    self.bom,
+                    scopes,
+                    "pkg:deb/example@1",
+                    "sha256:" + "a" * 64,
+                    "linux/arm64",
+                    {"bom": "b" * 64, "scopes": "c" * 64},
+                )
 
     def test_pinned_report_is_unchanged_after_another_revision(self):
         first = encode(report(self.bundle, self.snapshot, 1))
@@ -202,7 +242,11 @@ class ConsumerContract(unittest.TestCase):
                 purl = "pkg:deb/debian/example@1?arch=" + arch
                 bom["components"][0]["purl"] = purl
                 (root / "bom.json").write_bytes(encode(bom))
-                (root / "scopes.json").write_bytes(encode(self.scopes))
+                scopes = copy.deepcopy(self.scopes)
+                scopes["source_bom_sha256"] = hashlib.sha256(
+                    (root / "bom.json").read_bytes()
+                ).hexdigest()
+                (root / "scopes.json").write_bytes(encode(scopes))
                 with tarfile.open(root / "rootfs.tar", "w") as archive:
                     for name, raw in {
                         "var/lib/dpkg/info/example:"
