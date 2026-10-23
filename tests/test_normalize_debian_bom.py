@@ -117,6 +117,48 @@ class DebianTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "version mismatch"):
                 process(bom, path, {"expat": "MIT"})
 
+    def test_ownership_resolution_does_not_load_owned_files(self):
+        import tracemalloc
+
+        bom = {
+            "components": [
+                {
+                    "bom-ref": "p",
+                    "type": "library",
+                    "name": "pkg",
+                    "version": "1",
+                    "purl": "pkg:deb/debian/pkg@1",
+                },
+                {"bom-ref": "os", "type": "operating-system", "name": "debian", "version": "12"},
+            ]
+        }
+        payloads = {
+            "var/lib/dpkg/status": b"Package: pkg\nStatus: install ok installed\nVersion: 1\nArchitecture: arm64\n",
+            "var/lib/dpkg/info/pkg.list": b"/usr/lib/big.bin\n",
+            "usr/share/doc/pkg/copyright": b"Files: *\nLicense: Expat\n",
+        }
+        size = 32 * 1024 * 1024
+        with tempfile.TemporaryDirectory() as d:
+            path = Path(d) / "rootfs.tar"
+            with tarfile.open(path, "w") as t:
+                for name, raw in payloads.items():
+                    m = tarfile.TarInfo(name)
+                    m.size = len(raw)
+                    t.addfile(m, io.BytesIO(raw))
+                m = tarfile.TarInfo("usr/lib/big.bin")
+                m.size = size
+                with open(Path(d) / "zeros", "wb+") as zeros:
+                    zeros.truncate(size)
+                    zeros.seek(0)
+                    t.addfile(m, zeros)
+            tracemalloc.start()
+            try:
+                process(bom, path, {"expat": "MIT"})
+                _, peak = tracemalloc.get_traced_memory()
+            finally:
+                tracemalloc.stop()
+        self.assertLess(peak, size // 4)
+
 
 if __name__ == "__main__":
     unittest.main()

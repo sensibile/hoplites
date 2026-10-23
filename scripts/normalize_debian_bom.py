@@ -94,7 +94,8 @@ def process(bom, rootfs, aliases, reviewed=None):
     with tarfile.open(rootfs) as tar:
         members = {m.name.lstrip("./"): m for m in tar.getmembers()}
 
-        def read(path, follow_leaf=True):
+        def resolve(path, follow_leaf=True):
+            """Canonical regular-file member for path; contents are not read."""
             path = path.lstrip("/")
             for _ in range(40):
                 m = members.get(path)
@@ -114,7 +115,7 @@ def process(bom, rootfs, aliases, reviewed=None):
                         raise ValueError("Missing image file: " + path)
                     continue
                 if m.isfile():
-                    return tar.extractfile(m).read(), path
+                    return m, path
                 if m.issym():
                     if not follow_leaf:
                         raise ValueError("Leaf symlink does not establish target ownership")
@@ -126,6 +127,10 @@ def process(bom, rootfs, aliases, reviewed=None):
                 else:
                     raise ValueError("Not a file: " + path)
             raise ValueError("Symlink loop")
+
+        def read(path):
+            m, path = resolve(path)
+            return tar.extractfile(m).read(), path
 
         status_raw, _ = read("var/lib/dpkg/status")
         installed = {}
@@ -171,7 +176,7 @@ def process(bom, rootfs, aliases, reviewed=None):
             for path in raw.decode().splitlines():
                 owners.setdefault(path, []).append(key)
                 try:
-                    _, canonical = read(path, follow_leaf=False)
+                    _, canonical = resolve(path, follow_leaf=False)
                 except ValueError:
                     continue
                 resolved_owners.setdefault("/" + canonical, set()).add(key)
