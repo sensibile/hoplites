@@ -67,6 +67,15 @@ def database():
     return db
 
 
+def notice_ranges(db, project, version):
+    return {
+        r["notice_path"]: dict(r)
+        for r in db.execute(
+            "SELECT * FROM notice_range_rule WHERE project=? AND version=?", (project, version)
+        )
+    }
+
+
 def resolve_reference(image, descriptor, platform):
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:/@\-]+", image):
         raise ValueError("Invalid image reference")
@@ -279,7 +288,8 @@ class Pipeline:
                 "SELECT name,source_path,expression,binary_indicator FROM embedded_license_rule WHERE project='erlang' AND version=? ORDER BY name",
                 (otp["version"],),
             ).fetchall()
-            bom, report, notices = audit(bom, archive_files(rootfs), source, selectors)
+            ranges = notice_ranges(db, "erlang", otp["version"])
+            bom, report, notices = audit(bom, archive_files(rootfs), source, selectors, ranges)
             report.update(source_archive_sha256=expected, rootfs_sha256=digest(rootfs))
             for path, raw in notices.items():
                 dest = self.out / "sources/erlang-notices" / path
@@ -393,7 +403,8 @@ class Pipeline:
                     + ".tar.xz",
                     terms[0]["archive_sha256"],
                 )
-                bom, report, notices = cpython_audit(bom, rootfs, archive, terms, env)
+                ranges = notice_ranges(db, "cpython", version)
+                bom, report, notices = cpython_audit(bom, rootfs, archive, terms, env, ranges)
                 for path, raw in notices.items():
                     dest = self.out / "sources/cpython" / path
                     if not dest.resolve().is_relative_to((self.out / "sources/cpython").resolve()):

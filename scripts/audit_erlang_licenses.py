@@ -10,8 +10,9 @@ import sqlite3
 import tarfile
 from pathlib import Path
 from license_scope import record as scope_record, attach as scope_attach
+from notice_range import otp_block, reviewed
 
-RULE_VERSION = "erlang-internal-licenses-v2"
+RULE_VERSION = "erlang-internal-licenses-v3"
 COMMIT = "09fb046150ab94104e03ee816b95c8b7e6b04683"
 UNKNOWN = "LicenseRef-OTP-Megaco-Unresolved"
 
@@ -62,7 +63,8 @@ def installed_candidates(path, installed):
     )
 
 
-def audit(bom, installed, source, rules):
+def audit(bom, installed, source, rules, ranges=None):
+    ranges = ranges or {}
     result = copy.deepcopy(bom)
     unresolved_included = False
     matches = [
@@ -102,6 +104,7 @@ def audit(bom, installed, source, rules):
             "source_url": f"https://github.com/erlang/otp/blob/{COMMIT}/{path}",
         }
         if rows:
+            entry.update(otp_block(path, raw, ids))
             if "NOASSERTION" in ids:
                 if not path.startswith("lib/megaco/src/binary/MEDIA-GATEWAY-CONTROL-"):
                     raise ValueError("New unresolved declaration requires a reviewed rule")
@@ -139,6 +142,7 @@ def audit(bom, installed, source, rules):
                 "source_url": f"https://github.com/erlang/otp/blob/{COMMIT}/{path}",
             }
         )
+        native[-1].update(reviewed(path, source[path], ranges.get(path)))
         if present:
             expressions.add(expression)
             notices[path] = source[path]
@@ -292,8 +296,15 @@ def main():
     rules = db.execute(
         "SELECT name,source_path,expression,binary_indicator FROM embedded_license_rule WHERE project='erlang' AND version='28.5.0.7' ORDER BY name"
     ).fetchall()
+    db.row_factory = sqlite3.Row
+    ranges = {
+        r["notice_path"]: dict(r)
+        for r in db.execute(
+            "SELECT * FROM notice_range_rule WHERE project='erlang' AND version='28.5.0.7'"
+        )
+    }
     raw = args.sbom.read_bytes()
-    result, report, notices = audit(json.loads(raw), installed, source, rules)
+    result, report, notices = audit(json.loads(raw), installed, source, rules, ranges)
     output = (json.dumps(result, ensure_ascii=False, indent=2) + "\n").encode()
     report.update(
         input_sha256=sha(raw),

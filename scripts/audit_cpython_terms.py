@@ -7,13 +7,15 @@ import fnmatch
 import hashlib
 import tarfile
 from license_scope import record as scope_record, attach as scope_attach
+from notice_range import reviewed
 
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def audit(bom, installed, source, rules, archive_sha256, image_env):
+def audit(bom, installed, source, rules, archive_sha256, image_env, ranges=None):
+    ranges = ranges or {}
     result = copy.deepcopy(bom)
     candidates = [
         c for c in result["components"] if c.get("purl", "").startswith("pkg:generic/python@")
@@ -126,6 +128,9 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
                 "installed_path": r["installed_path"],
                 "installed_sha256": r["installed_sha256"],
                 "assessment": r["assessment"],
+                **reviewed(
+                    r["notice_path"], source[r["notice_path"]], ranges.get(r["notice_path"])
+                ),
             },
         )
         for r in additions
@@ -143,7 +148,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         }
     )
     report = {
-        "rule_version": "cpython-embedded-v2",
+        "rule_version": "cpython-embedded-v3",
         "license_scopes": scoped,
         "archive_sha256": archive_sha256,
         "image_source_sha256": image_env["PYTHON_SHA256"],
@@ -163,7 +168,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
     return result, report, notices
 
 
-def process(bom, rootfs, source_archive, rules, image_env):
+def process(bom, rootfs, source_archive, rules, image_env, ranges=None):
     installed, source = {}, {}
     with tarfile.open(rootfs) as tar:
         for m in tar:
@@ -180,4 +185,4 @@ def process(bom, rootfs, source_archive, rules, image_env):
                     raise ValueError("Duplicate source file")
                 source[path] = tar.extractfile(m).read()
     archive_sha256 = sha(source_archive.read_bytes())
-    return audit(bom, installed, source, rules, archive_sha256, image_env)
+    return audit(bom, installed, source, rules, archive_sha256, image_env, ranges)
