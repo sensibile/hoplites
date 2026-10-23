@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "source_version": "e591a3995ac5555ebd20a3fa31a327d50ec69407",
+  "source_version": "bd96f3aef49519b99dec0d15ff7c8ef5c2945b4c",
   "files": {
     ".codex/agents/taeguk_coordinator.toml": "dc0e532eaa510edc85391d092a6cd1826e7eda84cafd72755146df2fe8523ef1",
     ".codex/agents/taeguk_designer.toml": "900d373ab179c978adcd09d5db32c574426fdfd5da6d443aaef49ca23c836e61",
@@ -28,8 +28,8 @@
     ".agents/skills/taeguk-plan-cross-verification/agents/openai.yaml": "1f0a07b7d16fd8ccebfa424ce6c6e5658ed52588fa5ec4e118c9837b07ee05a1",
     ".agents/skills/taeguk-plan-cross-verification/references/check-selection.md": "c3a1889e32b608b74b69435bdd25e6b3c5c3c9c6b96592ad7c8332af2e1b5348",
     ".agents/skills/taeguk-plan-cross-verification/references/evidence-packet.md": "3bd056a442f254dbb50b6d65301666e84df1d54f38abc1c3218b0002c713353f",
-    ".agents/skills/taeguk-plan-cross-verification/references/reverification.md": "e77dd1146dce745a7133b3406c2c01b4a8b3b2b2e92aa221970e596ee9b52a3a",
-    ".agents/skills/taeguk-plan-cross-verification/scripts/run_exclusive.py": "5080aca4e79005a138c77e154c0427152717907e75e4368e04c270f5187f1900",
+    ".agents/skills/taeguk-plan-cross-verification/references/reverification.md": "e042b77dcc74b538184e39f3667d53c9575af95d270372dbbbfb7e006d1dd6e1",
+    ".agents/skills/taeguk-plan-cross-verification/scripts/run_exclusive.py": "e0b9bbae390729865817bd32d51910fe8d2fd8c77ac702935b9c3a70f4292030",
     ".agents/skills/taeguk-propose-rule-change/SKILL.md": "36410dae6b9f7300fb2be23def892f9785ed671fdbbd40c37b97d6e9046856cf",
     ".agents/skills/taeguk-propose-rule-change/agents/openai.yaml": "391e3c071a81883bd0034320bdcdf3f6f269a10f7c1dc8d8587491e8abafea1e",
     ".agents/skills/taeguk-propose-rule-change/references/evidence-packet.md": "3bd056a442f254dbb50b6d65301666e84df1d54f38abc1c3218b0002c713353f",
