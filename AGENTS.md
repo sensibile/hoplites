@@ -10,7 +10,7 @@
 
 Before the first repository edit for a new task, read and apply `/Users/tonton/.codex/skills/worktree-first-dev/SKILL.md`.
 
-Create a dedicated worktree and task branch, or reuse the worktree already assigned to the same task, including one prepared by the app. Implement and validate there. Preserve existing uncommitted changes. Read-only review and planning do not require a new worktree. Explicit user instructions take precedence. Commit coherent validated changes at appropriate milestones without separate approval. For non-code tasks, complete push, PR creation and merge after documentation gates pass without separate approval. Code-task push and merge follow BOSS's authorization.
+Create a dedicated worktree and task branch, or reuse the worktree already assigned to the same task, including one prepared by the app. Implement and validate there. Preserve existing uncommitted changes. Read-only review and planning do not require a new worktree. Explicit user instructions take precedence. Commit coherent validated changes at appropriate milestones without separate approval. For non-code tasks, complete push, PR creation and merge after documentation gates pass without separate approval. Code-task push and merge follow the remote delegation scope below and the Codex Push Preparation gate.
 
 ## CONFIDENTIAL
 
@@ -88,6 +88,15 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 - 같은 범위를 구현 대화 없이 독립 에이전트에게 리뷰시킨다. **push 준비 과정의 이 독립 리뷰에 한해 에이전트 실행을 명시적으로 허용한다.** 코드·요구사항·검증 근거만 전달하고 수정·commit·push 권한은 주지 않는다. 외부 모델 데이터 전달 승인 조건도 적용한다.
 - `./scripts/review-gate record PLAN_JSON COMPLETED_SCAN_DIR AGENT_JSON`으로 완료 결과를 등록한다. 수동 security pass, 범위 축소, 미해결 coverage, 취약점, 변경된 증적은 통과시키지 않는다.
 - 검사 뒤 head 또는 원격 main이 바뀌면 새 계획과 새 검사를 수행한다. 보안 검사와 독립 리뷰가 완료되지 않았다면 push가 준비됐다고 보고하지 않는다.
+
+## 리모트 저장소 위임 범위
+
+2026-10-23 BOSS가 `sensibile/hoplites` 리모트 관리를 아래 범위로 위임했다.
+
+- 자율 처리: 작업 브랜치 생성, commit, push, PR 생성, CI 확인·수정, 필수 gate를 통과한 PR의 squash merge, 머지된 브랜치·worktree 정리. 코드 push는 Codex Push Preparation gate를 통과해야 하며 위임이 gate 우회를 허용하지 않는다.
+- 처리 후 보고: main ruleset, 머지 방식 설정, label·milestone, workflow 변경.
+- BOSS 승인 필요: main force push·히스토리 재작성, 보호 규칙 해제, 릴리스 태그·GitHub Release, collaborator·권한 변경, secret 변경, visibility 변경·저장소 삭제, 외부 메시징.
+- 서버 정책: ruleset `main protection`(PR 필수, review thread 해소, squash만, 최신 main 기준 `documentation-policy` 통과, CodeQL errors·high 이상 차단, 삭제·force push 금지, bypass 없음). 머지 후 원격 브랜치는 자동 삭제한다.
 
 ## 공통 문서 gate 및 브랜치 정책
 
