@@ -2,7 +2,7 @@
 
 ## Approval-2026-10-05
 
-근거: 이 대화에서 BOSS가 “규칙의 적용은 에이전트가 자유롭게 사용하고 규칙의 변경은 사용자 확인으로 하면 되겠다”라고 지시했다. GOV-001과 GOV-002의 기존 합의를 유지한다. 원래 기록은 [규칙 목록](https://github.com/sensibile/taeguk/blob/main/docs/research/archive/규칙-목록.md)과 [규칙 관리](https://github.com/sensibile/taeguk/blob/main/docs/research/archive/규칙-관리.md)에 보존한다.
+근거: 이 대화에서 BOSS가 “규칙의 적용은 에이전트가 자유롭게 사용하고 규칙의 변경은 사용자 확인으로 하면 되겠다”라고 지시했다. GOV-001과 GOV-002의 기존 합의를 유지한다. 원래 기록은 [규칙 목록](https://github.com/sensibile/taeguk/blob/4bb6adb1f0c436956cc495e673565fe6d5af8773/docs/research/archive/규칙-목록.md)과 [규칙 관리](https://github.com/sensibile/taeguk/blob/4bb6adb1f0c436956cc495e673565fe6d5af8773/docs/research/archive/규칙-관리.md)에 보존한다.
 
 ## Approval-2026-10-11
 
@@ -24,6 +24,6 @@
 
 ## Approval-2026-10-23
 
-근거: 변경 전 diff를 제시한 뒤 BOSS가 “이 diff대로 규칙 문서 변경을 승인해. approvals.md에 승인 기록 남기고 PR #3에 커밋·push해줘”라고 지시했다.
+근거: 변경 전 diff를 제시한 뒤 BOSS가 “이 diff대로 규칙 문서 변경을 승인해. approvals.md에 승인 기록 남기고 PR #3에 커밋·push해줘”라고 지시했다. 인용문의 PR #3은 [sensibile/taeguk#3](https://github.com/sensibile/taeguk/pull/3)이다.
 
 범위: 프로젝트 단위 설치로 `.taeguk/rules`에 복사되는 문서가 설치된 프로젝트에서도 사실이 되도록 index.md, mechanical-checks.md, approvals.md, proposals/index.md의 Taeguk 저장소 전용 경로·검사·원격 설정 설명에 적용 위치를 명시하고, 사본에서 끊기는 research archive 상대 링크를 원격 주소로 바꿨다. 오래된 "remote 없음" 설명은 저장소 운영 기록 참조로 대체했다. 규칙 ID 본문, registry, 규칙 버전·의미·임계값·권한은 바꾸지 않았다. 원격 주소로 바꾼 링크는 로컬 링크 검사 대상에서 빠진다.
