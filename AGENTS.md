@@ -99,6 +99,7 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 - 처리 후 보고: main ruleset, 머지 방식 설정, label·milestone, workflow 변경.
 - BOSS 승인 필요: main force push·히스토리 재작성, 보호 규칙 해제, 릴리스 태그·GitHub Release, collaborator·권한 변경, secret 변경, visibility 변경·저장소 삭제, 외부 메시징.
 - 서버 정책: ruleset `main protection`(PR 필수, review thread 해소, squash만, 최신 main 기준 `documentation-policy` 통과, CodeQL errors·high 이상 차단, 삭제·force push 금지, bypass 없음). 머지 후 원격 브랜치는 자동 삭제한다.
+- 저장소 설정(2026-10-23, `sensibile/taeguk`과 동일 구성): squash merge만 허용(제목·본문은 PR 제목·본문), auto-merge 허용, Dependabot alerts·security updates, secret scanning·push protection, CodeQL default setup(actions, python). taeguk과의 차이: 필수 체크 이름은 저장소별 CI(`documentation-policy`)이고, 최신 main 기준 검사(strict)는 기존 branch protection에서 유지했다(taeguk은 미사용).
 
 ## 공통 문서 gate 및 브랜치 정책
 
