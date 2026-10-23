@@ -98,8 +98,8 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 - 자율 처리: 작업 브랜치 생성, commit, push, PR 생성, CI 확인·수정, 필수 gate를 통과한 PR의 squash merge, 머지된 브랜치·worktree 정리. 코드 push는 Codex Push Preparation gate를 통과해야 하며 위임이 gate 우회를 허용하지 않는다.
 - 처리 후 보고: main ruleset, 머지 방식 설정, label·milestone, workflow 변경.
 - BOSS 승인 필요: main force push·히스토리 재작성, 보호 규칙 해제, 릴리스 태그·GitHub Release, collaborator·권한 변경, secret 변경, visibility 변경·저장소 삭제, 외부 메시징.
-- 서버 정책: ruleset `main protection`(PR 필수, review thread 해소, squash만, 최신 main 기준 `documentation-policy` 통과, CodeQL errors·high 이상 차단, 삭제·force push 금지, bypass 없음). 머지 후 원격 브랜치는 자동 삭제한다.
-- 저장소 설정(2026-10-23, `sensibile/taeguk`과 동일 구성): squash merge만 허용(제목·본문은 PR 제목·본문), auto-merge 허용, Dependabot alerts·security updates, secret scanning·push protection, CodeQL default setup(actions, python). taeguk과의 차이: 필수 체크 이름은 저장소별 CI(`documentation-policy`)이고, 최신 main 기준 검사(strict)는 기존 branch protection에서 유지했다(taeguk은 미사용).
+- 서버 정책: ruleset `main protection`(PR 필수, review thread 해소, squash만, `documentation-policy` 통과, CodeQL errors·high 이상 차단, 삭제·force push 금지, bypass 없음). 머지 후 원격 브랜치는 자동 삭제한다.
+- 저장소 설정(2026-10-23, `sensibile/taeguk`과 동일 구성): squash merge만 허용(제목·본문은 PR 제목·본문), auto-merge 허용, Dependabot alerts·security updates, secret scanning·push protection, CodeQL default setup(actions, python). taeguk과의 차이는 필수 체크 이름(저장소별 CI `documentation-policy`)뿐이다. 최신 main 기준 검사(strict)는 taeguk과 같게 사용하지 않는다.
 
 ## 공통 문서 gate 및 브랜치 정책
 
