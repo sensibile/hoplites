@@ -7,7 +7,7 @@ import fnmatch
 import hashlib
 import tarfile
 from license_scope import record as scope_record, attach as scope_attach
-from notice_range import reviewed
+from notice_range import pending as range_pending, reviewed
 
 
 def sha(raw):
@@ -157,7 +157,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env, ranges=None)
         "before": before,
         "after": python["licenses"],
         "terms": additions,
-        "unresolved": pending,
+        "unresolved": pending + range_pending(scoped),
         "limitations": [
             "Compiled module mapping is build association, not a reproduction of binary bytes",
             "LicenseRef notices preserve exact source terms pending canonical ID review",

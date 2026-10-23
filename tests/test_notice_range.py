@@ -147,6 +147,12 @@ class ErlangAuditRangeTests(unittest.TestCase):
             self.assertEqual(sha(preserved), e["notice_sha256"])
             self.assertEqual(sha(text(e, preserved)), e["text_sha256"])
             self.assertIn("source_path", e)
+        self.assertFalse([u for u in report["unresolved"] if "notice byte range" in u["reason"]])
+        _, report, _ = audit(bom, installed, source, [("n", "native/n.c", "MIT", "native")])
+        self.assertEqual(
+            [u["source_path"] for u in report["unresolved"] if "notice byte range" in u["reason"]],
+            ["native/n.c"],
+        )
 
 
 if __name__ == "__main__":

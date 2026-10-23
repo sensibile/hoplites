@@ -173,3 +173,20 @@ def reviewed(path, raw, rule):
             "Review the anchor rule against the notice file",
         )
     return located(path, raw, start, end, REVIEWED_RULE, style)
+
+
+def pending(records):
+    """Unresolved notice ranges as tracked work items, one per notice file."""
+    items = {}
+    for r in records:
+        e = r["evidence"]
+        if e.get("notice_range_status") == "unresolved":
+            items.setdefault(
+                e["notice_path"],
+                {
+                    "source_path": e["notice_path"],
+                    "reason": "notice byte range unresolved: " + e["notice_range_reason"],
+                    "next_action": e["notice_range_next_action"],
+                },
+            )
+    return list(items.values())

@@ -10,7 +10,7 @@ import sqlite3
 import tarfile
 from pathlib import Path
 from license_scope import record as scope_record, attach as scope_attach
-from notice_range import otp_block, reviewed
+from notice_range import otp_block, pending, reviewed
 
 RULE_VERSION = "erlang-internal-licenses-v3"
 COMMIT = "09fb046150ab94104e03ee816b95c8b7e6b04683"
@@ -262,7 +262,8 @@ def audit(bom, installed, source, rules, ranges=None):
             ]
             if unresolved_included
             else []
-        ),
+        )
+        + pending(scoped),
         "limitations": [
             "Compiled/native attribution is inferred from source/build rules and installed evidence, not rebuild equivalence.",
             "Source SPDX/explicit native notice coverage is not a universal license detector.",

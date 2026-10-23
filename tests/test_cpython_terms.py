@@ -73,8 +73,33 @@ class CPythonTests(unittest.TestCase):
         self.assertEqual(report["license_scopes"][1]["declared_expression"], "MIT")
         self.assertEqual(report["terms"][0]["assessment"], "confirmed-source-bytes-and-notice")
         self.assertTrue(report["terms"][1]["assessment"].startswith("inferred"))
-        self.assertEqual(len(report["unresolved"]), 1)
+        ranged = [u for u in report["unresolved"] if "notice byte range" in u["reason"]]
+        self.assertEqual(len(report["unresolved"]) - len(ranged), 1)
+        self.assertEqual(sorted(u["source_path"] for u in ranged), ["Lib/a.py", "Modules/a.c"])
         self.assertTrue(notices)
+
+    def test_reviewed_notice_range_resolves_against_preserved_notice(self):
+        bom, installed, source, rules, env = self.fixture()
+        rule = {
+            "notice_sha256": sha(source["Modules/a.c"]),
+            "style": "comment",
+            "start_marker": "/* MIT */",
+            "end_marker": "/* MIT */",
+            "text_sha256": sha(source["Modules/a.c"]),
+        }
+        _, report, notices = audit(
+            bom, installed, source, rules, "archive", env, {"Modules/a.c": rule}
+        )
+        e = report["license_scopes"][1]["evidence"]
+        preserved = notices["cpython/" + e["notice_path"]]
+        self.assertEqual(sha(preserved), e["notice_sha256"])
+        self.assertEqual(
+            sha(preserved[e["source_byte_start"] : e["source_byte_end"]]), e["text_sha256"]
+        )
+        self.assertEqual(
+            report["license_scopes"][0]["evidence"]["notice_range_status"], "unresolved"
+        )
+        self.assertNotIn("source_byte_start", report["license_scopes"][0]["evidence"])
 
     def test_source_change_cannot_inherit_terms(self):
         bom, installed, source, rules, env = self.fixture()
