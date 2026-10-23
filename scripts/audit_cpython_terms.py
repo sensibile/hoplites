@@ -6,6 +6,7 @@ import copy
 import fnmatch
 import hashlib
 import tarfile
+from license_scope import record as scope_record, attach as scope_attach
 
 
 def sha(raw):
@@ -44,6 +45,33 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         raise ValueError("Invalid CPython build metadata")
     build = variables[0]
     additions, pending, notices = [], [], {configs[0]: installed[configs[0]]}
+    unresolved_rules = []
+
+    def retain_unresolved(rule, reason, next_action, paths):
+        evidence = {
+            "source_path": rule["source_path"],
+            "notice_path": rule["notice_path"],
+            "source_sha256": rule["source_sha256"],
+            "notice_sha256": rule["notice_sha256"],
+            "installed_selector": rule["installed_selector"],
+            "candidate_paths": paths,
+            "reason": reason,
+            "next_action": next_action,
+        }
+        unresolved_rules.append(
+            scope_record(
+                python,
+                rule["name"],
+                "installed-source" if rule["mode"] == "source-match" else "compiled-extension",
+                rule["expression"],
+                "unknown",
+                "unknown",
+                evidence,
+            )
+        )
+        notices["cpython/" + rule["notice_path"]] = source[rule["notice_path"]]
+        notices["cpython/" + rule["source_path"]] = source[rule["source_path"]]
+
     for r in selected:
         raw = source.get(r["source_path"])
         notice = source.get(r["notice_path"])
@@ -56,6 +84,12 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
             raise ValueError("CPython reviewed source/notice hash mismatch")
         paths = [p for p in installed if fnmatch.fnmatchcase(p, base + r["installed_selector"])]
         if len(paths) != 1:
+            retain_unresolved(
+                r,
+                "installed artifact selector missing/ambiguous",
+                "Review exact module build and installed layout",
+                paths,
+            )
             pending.append(
                 {
                     "name": r["name"],
@@ -67,6 +101,12 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         path = paths[0]
         if r["mode"] == "source-match":
             if installed[path] != raw:
+                retain_unresolved(
+                    r,
+                    "installed source differs from pinned upstream",
+                    "Review installed patch and license header",
+                    paths,
+                )
                 pending.append(
                     {
                         "name": r["name"],
@@ -79,6 +119,12 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
             status = "confirmed-source-bytes-and-notice"
         elif r["mode"] == "binary-build":
             if r["build_indicator"] not in str(build.get(r["build_key"], "")):
+                retain_unresolved(
+                    r,
+                    "build indicator absent",
+                    "Check external versus bundled library build",
+                    paths,
+                )
                 pending.append(
                     {
                         "name": r["name"],
@@ -101,7 +147,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
                     "name": r["name"],
                     "expression": r["expression"],
                     "source_path": r["notice_path"],
-                    "reason": "Source terms included in standard expression; canonical SPDX identity unresolved",
+                    "reason": "Source terms preserved in per-target scope; canonical SPDX identity unresolved",
                     "next": "Compare exact source notice with SPDX matching templates; preserve attribution and restrictions",
                 }
             )
@@ -109,9 +155,31 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
     if len(before or []) != 1 or "expression" not in before[0]:
         raise ValueError("CPython parent license expression required")
     expression = before[0]["expression"]
-    for term in sorted({r["expression"] for r in additions}):
-        if term not in expression.split(" AND "):
-            expression += " AND " + term
+    scoped = [
+        scope_record(
+            python,
+            r["name"],
+            "installed-source" if r["mode"] == "source-match" else "compiled-extension",
+            r["expression"],
+            "confirmed" if r["mode"] == "source-match" else "inferred",
+            "confirmed" if r["mode"] == "source-match" else "inferred",
+            {
+                "source_path": r["source_path"],
+                "notice_path": r["notice_path"],
+                "source_sha256": r["source_sha256"],
+                "notice_sha256": r["notice_sha256"],
+                "installed_path": r["installed_path"],
+                "installed_sha256": r["installed_sha256"],
+                "assessment": r["assessment"],
+            },
+        )
+        for r in additions
+    ] + unresolved_rules
+    scope_attach(
+        python,
+        scoped,
+        "Project/distribution terms; extension and stdlib terms are separately scoped",
+    )
     python["licenses"] = [{"expression": expression}]
     python.setdefault("properties", []).append(
         {
@@ -120,7 +188,8 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         }
     )
     report = {
-        "rule_version": "cpython-embedded-v1",
+        "rule_version": "cpython-embedded-v2",
+        "license_scopes": scoped,
         "archive_sha256": archive_sha256,
         "image_source_sha256": image_env["PYTHON_SHA256"],
         "build_metadata_path": configs[0],

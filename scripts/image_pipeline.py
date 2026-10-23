@@ -22,12 +22,20 @@ from pathlib import Path
 from enrich_syft_apk import enrich as apk_enrich
 from normalize_syft_bom import normalize as package_view
 from enrich_runtime_bom import enrich as runtime_enrich
+from normalize_node_bom import process as node_view, archive_files as node_files
 from normalize_platform_metadata import read_layers, normalize as platform_view
 from normalize_debian_bom import process as debian_view
 from audit_erlang_licenses import archive_files, audit
 from build_evidence_bundle import safe_csv
 from enrich_python_bom import process as python_view, LAUNCHER_URL, LAUNCHER_SHA256
 from audit_cpython_terms import process as cpython_audit
+from license_scope import collect as collect_scopes, render as render_scopes
+from validate_enrichment import audit as audit_enrichment
+from license_fields import (
+    normalize as normalize_license_fields,
+    validate as validate_license_fields,
+    DIGEST,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 SYFT = (
@@ -406,6 +414,19 @@ class Pipeline:
                 self.stage("cpython-embedded", bom, report)
                 self.pending.extend(report["unresolved"])
         bom = self.runtime(bom, rootfs, ref, db)
+        if any(c.get("purl", "").startswith("pkg:generic/node@") for c in bom["components"]):
+            bom, report, sources = node_view(bom, node_files(rootfs))
+            for path, raw in sources.items():
+                dest = self.out / "sources/node" / path
+                if not dest.resolve().is_relative_to((self.out / "sources/node").resolve()):
+                    raise ValueError("Unsafe Node source path")
+                dest.parent.mkdir(parents=True, exist_ok=True)
+                dest.write_bytes(raw)
+            self.stage("node-package-view", bom, report)
+            self.pending.extend(report["unresolved"])
+        bom, report = normalize_license_fields(bom)
+        self.stage("license-field-semantics", bom, report)
+        self.pending.extend(report["unresolved"])
         for c in bom["components"]:
             if c.get("type") == "file":
                 if any(
@@ -429,15 +450,39 @@ class Pipeline:
                         "next": "Find shipped or version-pinned upstream terms",
                     }
                 )
+        save(
+            self.out / "license-scopes.json",
+            {
+                "rule_version": "license-scope-v1",
+                "records": collect_scopes(bom),
+                "fulfillment": "not-verified",
+                "scope": "Project license fields and per-target declarations are separate",
+            },
+        )
+        (self.out / "license-scopes.html").write_text(render_scopes(bom))
         return bom
 
     def bundle(self, original, bom):
+        save(self.out / "enrichment-validation.json", audit_enrichment(original, bom))
+        save(
+            self.out / "license-scopes.json",
+            {
+                "rule_version": "license-scope-v1",
+                "source_bom_sha256": digest(self.out / "normalized.cdx.json"),
+                "records": collect_scopes(bom),
+                "fulfillment": "not-verified",
+            },
+        )
+        (self.out / "license-scopes.html").write_text(render_scopes(bom))
         out = self.out / "submission"
         out.mkdir()
         for name in [
             "original.cdx.json",
             "normalized.cdx.json",
             "normalization-evidence.json",
+            "license-scopes.json",
+            "license-scopes.html",
+            "enrichment-validation.json",
             "image.json",
             "commands.json",
             "summary.json",
@@ -496,6 +541,7 @@ class Pipeline:
 
 
 def upload(pipeline, bom, ref, project):
+    validate_license_fields(bom)
     key = (
         subprocess.run(
             [
@@ -553,6 +599,7 @@ def upload(pipeline, bom, ref, project):
         page += 1
     actual = {(c["name"], c.get("version"), c.get("purl")): c for c in rows}
     problems = []
+    scope_verification = []
     for c in bom["components"]:
         found = actual.get((c["name"], c.get("version"), c.get("purl")))
         if not found:
@@ -563,7 +610,49 @@ def upload(pipeline, bom, ref, project):
                 problems.append(
                     {"name": c["name"], "purl": c.get("purl"), "issue": "SHA-256 differs"}
                 )
+        expected_scopes = {
+            p["name"]: p["value"]
+            for p in c.get("properties", [])
+            if p["name"].startswith("hoplites:license-scope:")
+        }
+        if expected_scopes:
+            detail = api("component/" + found["uuid"] + "/property")
+            stored = {
+                (p.get("groupName", "") + ":" if p.get("groupName") else "")
+                + p["propertyName"]: p.get("propertyValue")
+                for p in detail
+            }
+            scoped_stored = {
+                k: v for k, v in stored.items() if k.startswith("hoplites:license-scope:")
+            }
+            if set(scoped_stored) != set(expected_scopes):
+                problems.append({"name": c["name"], "issue": "license scope property set differs"})
+            scope_verification.append(
+                {
+                    "name": c["name"],
+                    "purl": c.get("purl"),
+                    "uuid": found["uuid"],
+                    "stored_properties": scoped_stored,
+                }
+            )
+            for name, value in expected_scopes.items():
+                if stored.get(name) != value:
+                    problems.append(
+                        {"name": c["name"], "issue": "license scope differs", "property": name}
+                    )
         licenses = c.get("licenses", [])
+        if not licenses and any(
+            found.get(k) for k in ("license", "licenseExpression", "resolvedLicense")
+        ):
+            problems.append({"name": c["name"], "issue": "stale license retained"})
+        for value in [
+            found.get("license"),
+            found.get("licenseExpression"),
+            (found.get("resolvedLicense") or {}).get("licenseId"),
+            (found.get("resolvedLicense") or {}).get("name"),
+        ]:
+            if isinstance(value, str) and DIGEST.fullmatch(value.strip()):
+                problems.append({"name": c["name"], "issue": "digest in DT license field"})
         if len(licenses) == 1:
             l = licenses[0]
             if "expression" in l and found.get("licenseExpression") != l["expression"]:
@@ -580,6 +669,7 @@ def upload(pipeline, bom, ref, project):
             "expected": len(bom["components"]),
             "actual": len(rows),
             "mismatches": problems,
+            "license_scope_verification": scope_verification,
             "components": rows,
         },
     )
@@ -835,7 +925,11 @@ def main():
                         for item in decisions["unresolved"]
                     )
         summary.update(
-            status="completed", unresolved_count=len(pipe.pending), unresolved=pipe.pending
+            status="execution-completed",
+            enrichment_status=audit_enrichment(original, bom)["status"],
+            enrichment_complete=False,
+            unresolved_count=len(pipe.pending),
+            unresolved=pipe.pending,
         )
         save(pipe.out / "summary.json", summary)
         pipe.bundle(original, bom)
