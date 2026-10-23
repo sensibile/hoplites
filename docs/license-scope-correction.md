@@ -31,3 +31,15 @@ Node와 이전 이미지에서 소스 고지에 등장하는 모든 조건을 �
 `license_fields.py`는 해시 형태의 이름·ID·전체 식을 검사한다. `public-domain-sha1` 같은 실제 선언 이름과 `LicenseRef-*`는 해시로 오인하지 않는다. 이 검사는 최종 정규화에 적용되며 업로드 전에도 잘못된 값을 거부한다. DT 검증은 라이선스 없는 항목에 이전 값이 잔류하지 않았는지 검사한다. 이것은 형식 오류 검사이며, 나머지 선언의 라이선스 정확도나 완전성을 보증하지 않는다.
 
 `license-scope-fixed-*-002` 결과에서 Node 14, Java 19, Python 14, Ubuntu 11개 항목을 교정했다. Elixir에는 해당 오류가 없었다. 이전 `001` 결과 대비 620개 관리 컴포넌트의 이름·버전·PURL은 모두 유지한다. 별도 적용 범위와 원문 검토 작업도 유지한다.
+
+## 소스 내 고지의 바이트 범위
+
+소스 파일 전체는 라이선스 원문이 아니다. 고지가 소스 파일 안에 있는 기록(`installed-source`, `compiled-extension`, `installed-source-or-generated-module`, `binary-embedded-code`)은 evidence에 `notice_path`, `notice_sha256`, `source_byte_start`, `source_byte_end`, `text_sha256`을 추가해 라이선스 조건과 저작권 고지를 담은 블록만 가리킨다. Node `source-notice`와 같은 형식이며 `notice_sha256` 파일은 실행 디렉터리의 `sources/` 아래에 보존된다. 기존 evidence 필드는 그대로 두고 추가만 했으므로 `license-scope-v1`을 유지한다. 범위 판단 근거는 `notice_range_status`, `notice_range_rule`, `notice_range_style`로 함께 남긴다.
+
+* Erlang/OTP 소스(`otp-copyright-markers-v1`): OTP가 파일마다 두는 `%CopyrightBegin%`…`%CopyrightEnd%` 줄 전체를 범위로 한다. 표지 쌍이 정확히 하나이고, 블록 안의 `SPDX-License-Identifier`가 기록된 선언과 같고, 모든 줄이 주석(줄 주석, 블록 주석 내부, REUSE `.license` sidecar)일 때만 범위를 기록한다.
+* Erlang 네이티브·CPython(`reviewed-notice-anchor-v1`): `migrations/0010_notice_range_rules.sql`에 파일 해시, 시작·끝 앵커 줄, 검토한 고지 텍스트 해시를 고정했다. 소스 파일은 주석 검사를 통과해야 한다. `LICENSE`·`COPYING` 같은 라이선스 문서는 파일 전체, CPython `Doc/license.rst`의 uu codec 고지는 해당 고지 블록만 범위로 한다. 변경 이력 등 고지 밖 설명은 제외했다.
+* 조건을 만족하지 못하면 범위를 추측하지 않는다. `notice_range_status=unresolved`와 사유, 다음 조치를 기록하며 범위 필드는 넣지 않는다.
+
+`license-scope-fixed-{elixir,python}-003`은 002의 rootfs와 원본 SBOM을 재사용해 다시 처리한 결과다. 구성요소의 이름·버전·PURL·표준 라이선스와 범위 기록 수(Elixir 364, Python 1,443)는 002와 같고, 기존 evidence 값도 바뀌지 않았다. 대상 기록은 Elixir 364건(소스·생성 모듈 358, 네이티브 6), Python 10건(설치 소스 4, 확장 모듈 6)이며 모두 범위를 얻었고 미해결은 0건이다. 각 범위는 `notice_sha256`과 같은 `sources/` 파일에서 다시 잘라 `text_sha256`과 대조했다. 기록 `id`는 evidence 해시를 포함하므로 002와 달라진다. DT 업로드는 하지 않았다.
+
+범위는 고지 위치를 가리킬 뿐이다. 고지가 해당 대상에 적용되는지, 컴파일된 모듈이 그 소스에서 왔는지(추론 표시 유지), 수신자 고지 등 의무 이행은 이 범위로 확정되지 않는다.
