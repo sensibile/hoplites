@@ -6,13 +6,16 @@ import copy
 import fnmatch
 import hashlib
 import tarfile
+from license_scope import record as scope_record, attach as scope_attach
+from notice_range import pending as range_pending, reviewed
 
 
 def sha(raw):
     return hashlib.sha256(raw).hexdigest()
 
 
-def audit(bom, installed, source, rules, archive_sha256, image_env):
+def audit(bom, installed, source, rules, archive_sha256, image_env, ranges=None):
+    ranges = ranges or {}
     result = copy.deepcopy(bom)
     candidates = [
         c for c in result["components"] if c.get("purl", "").startswith("pkg:generic/python@")
@@ -101,7 +104,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
                     "name": r["name"],
                     "expression": r["expression"],
                     "source_path": r["notice_path"],
-                    "reason": "Source terms included in standard expression; canonical SPDX identity unresolved",
+                    "reason": "Source terms preserved in per-target scope; canonical SPDX identity unresolved",
                     "next": "Compare exact source notice with SPDX matching templates; preserve attribution and restrictions",
                 }
             )
@@ -109,9 +112,34 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
     if len(before or []) != 1 or "expression" not in before[0]:
         raise ValueError("CPython parent license expression required")
     expression = before[0]["expression"]
-    for term in sorted({r["expression"] for r in additions}):
-        if term not in expression.split(" AND "):
-            expression += " AND " + term
+    scoped = [
+        scope_record(
+            python,
+            r["name"],
+            "installed-source" if r["mode"] == "source-match" else "compiled-extension",
+            r["expression"],
+            "confirmed" if r["mode"] == "source-match" else "inferred",
+            "confirmed" if r["mode"] == "source-match" else "inferred",
+            {
+                "source_path": r["source_path"],
+                "notice_path": r["notice_path"],
+                "source_sha256": r["source_sha256"],
+                "notice_sha256": r["notice_sha256"],
+                "installed_path": r["installed_path"],
+                "installed_sha256": r["installed_sha256"],
+                "assessment": r["assessment"],
+                **reviewed(
+                    r["notice_path"], source[r["notice_path"]], ranges.get(r["notice_path"])
+                ),
+            },
+        )
+        for r in additions
+    ]
+    scope_attach(
+        python,
+        scoped,
+        "Project/distribution terms; extension and stdlib terms are separately scoped",
+    )
     python["licenses"] = [{"expression": expression}]
     python.setdefault("properties", []).append(
         {
@@ -120,7 +148,8 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         }
     )
     report = {
-        "rule_version": "cpython-embedded-v1",
+        "rule_version": "cpython-embedded-v3",
+        "license_scopes": scoped,
         "archive_sha256": archive_sha256,
         "image_source_sha256": image_env["PYTHON_SHA256"],
         "build_metadata_path": configs[0],
@@ -128,7 +157,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
         "before": before,
         "after": python["licenses"],
         "terms": additions,
-        "unresolved": pending,
+        "unresolved": pending + range_pending(scoped),
         "limitations": [
             "Compiled module mapping is build association, not a reproduction of binary bytes",
             "LicenseRef notices preserve exact source terms pending canonical ID review",
@@ -139,7 +168,7 @@ def audit(bom, installed, source, rules, archive_sha256, image_env):
     return result, report, notices
 
 
-def process(bom, rootfs, source_archive, rules, image_env):
+def process(bom, rootfs, source_archive, rules, image_env, ranges=None):
     installed, source = {}, {}
     with tarfile.open(rootfs) as tar:
         for m in tar:
@@ -156,4 +185,4 @@ def process(bom, rootfs, source_archive, rules, image_env):
                     raise ValueError("Duplicate source file")
                 source[path] = tar.extractfile(m).read()
     archive_sha256 = sha(source_archive.read_bytes())
-    return audit(bom, installed, source, rules, archive_sha256, image_env)
+    return audit(bom, installed, source, rules, archive_sha256, image_env, ranges)

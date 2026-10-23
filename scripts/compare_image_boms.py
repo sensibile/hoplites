@@ -4,7 +4,7 @@
 import argparse
 import json
 from pathlib import Path
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, urlsplit, unquote
 
 
 def identity(c):
@@ -13,7 +13,8 @@ def identity(c):
         return (c.get("type"), c["name"], c.get("version"), None)
     ecosystem = purl.split("/")[0]
     arch = parse_qs(urlsplit(purl).query).get("arch", [None])[0]
-    return ecosystem, c["name"].lower(), c.get("version"), arch
+    package_path = unquote(purl.split("?", 1)[0].split("/", 1)[1].rsplit("@", 1)[0])
+    return ecosystem, package_path, c.get("version"), arch
 
 
 def compare(left, right):
