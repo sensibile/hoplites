@@ -10,6 +10,8 @@
 
 Before the first repository edit for a new task, read and apply `/Users/tonton/.codex/skills/worktree-first-dev/SKILL.md`.
 
+Read `.taeguk/rules/index.md` before planning and apply Taeguk rules to explicitly assigned workflows.
+
 Create a dedicated worktree and task branch, or reuse the worktree already assigned to the same task, including one prepared by the app. Implement and validate there. Preserve existing uncommitted changes. Read-only review and planning do not require a new worktree. Explicit user instructions take precedence. Commit coherent validated changes at appropriate milestones without separate approval. For non-code tasks, complete push, PR creation and merge after documentation gates pass without separate approval. Code-task push and merge follow the remote delegation scope below and the Codex Push Preparation gate.
 
 ## CONFIDENTIAL
