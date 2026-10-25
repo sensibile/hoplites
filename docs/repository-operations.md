@@ -30,7 +30,7 @@ workflow는 job 두 개로 나뉜다. `record` job은 직렬화하지 않으며,
 
 ## GitHub 설정
 
-- 필수 체크: `documentation-policy`, 그리고 gate PR이 머지된 뒤 추가하는 commit status `codex-review`(integration 15368, GitHub Actions). 기본 브랜치에 없는 workflow는 댓글 이벤트에 반응하지 않으므로 gate가 `main`에 들어간 뒤 지정한다. `codex-review`는 gate 스크립트의 status context 이름에 의존한다. 이름을 바꾸면 ruleset도 함께 갱신한다.
+- 필수 체크: `documentation-policy`와 commit status `codex-review`(integration 15368, GitHub Actions). 기본 브랜치에 없는 workflow는 댓글 이벤트에 반응하지 않으므로 gate가 `main`에 들어간 뒤 지정했다. 2026-10-26 gate PR(#14, 머지 `c377af2`) 뒤 ruleset `main protection`(id 25695862)에 추가하고 API 조회로 두 체크와 strict 미사용을 확인했다. label `no-auto-merge`도 같은 날 만들었다. gate PR 자체에는 gate가 아직 기본 브랜치에 없어 `codex-review` status가 게시되지 않았다. 그래서 세션이 그 head의 Codex 요약 상태(`completed`, `has_unresolved_findings: false`)와 미해결 thread 0개를 직접 확인한 뒤 head를 고정해 머지했다. 당시 ruleset은 `codex-review`를 요구하지 않았다. `codex-review`는 gate 스크립트의 status context 이름에 의존한다. 이름을 바꾸면 ruleset도 함께 갱신한다.
 - `codex-review-gate-tests` workflow가 PR마다 gate 테스트를 실행한다. 필수 체크로 지정하지 않았다. 같은 테스트는 pre-commit의 전체 테스트에도 포함된다.
 - label `no-auto-merge`: 세션이 auto-merge를 켜지 않을 PR 표시.
 - 최신 base 요구(strict)는 사용하지 않는다. 따라서 `main`이 앞서 나가도 auto-merge는 PR을 갱신하지 않고 머지하며, squash 결과는 PR 단계에서 검사한 merge ref와 다를 수 있다. 충돌이 나면 GitHub가 머지하지 않는다. 세션이 PR 브랜치를 갱신하면 head가 바뀌므로 5단계대로 리뷰를 다시 요청한다.
