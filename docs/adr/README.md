@@ -16,3 +16,4 @@
 - [0009 공통 개발 정책과 검증 훅](0009-development-workflow.md)
 
 - [0010 새 이미지 처리의 작업 계약](0010-image-processing-contract.md)
+- [0011 Codex 리뷰 gate와 세션의 리뷰 요청·머지](0011-codex-review-gate.md)
