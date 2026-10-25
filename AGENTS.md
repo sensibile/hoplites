@@ -98,7 +98,7 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 - 자율 처리: 작업 브랜치 생성, commit, push, PR 생성, CI 확인·수정, 필수 gate를 통과한 PR의 squash merge, 머지된 브랜치·worktree 정리. 코드 push는 Codex Push Preparation gate를 통과해야 하며 위임이 gate 우회를 허용하지 않는다.
 - 처리 후 보고: main ruleset, 머지 방식 설정, label·milestone, workflow 변경.
 - BOSS 승인 필요: main force push·히스토리 재작성, 보호 규칙 해제, 릴리스 태그·GitHub Release, collaborator·권한 변경, secret 변경, visibility 변경·저장소 삭제, 외부 메시징.
-- 서버 정책: ruleset `main protection`(PR 필수, review thread 해소, squash만, `documentation-policy`·`codex-review` 통과, CodeQL errors·high 이상 차단, 삭제·force push 금지, bypass 없음). `codex-review`는 gate가 main에 들어간 뒤 추가한다. 머지 후 원격 브랜치는 자동 삭제한다.
+- 서버 정책: ruleset `main protection`(PR 필수, review thread 해소, squash만, `documentation-policy`·`codex-review` 통과, CodeQL errors·high 이상 차단, 삭제·force push 금지, bypass 없음). `codex-review`는 2026-10-26 gate 머지 뒤 추가했다. 머지 후 원격 브랜치는 자동 삭제한다.
 - Codex 리뷰 gate(2026-10-25 BOSS 결정): gate는 `codex-review` status 판정만 하며 리뷰 요청·머지·시간 기준 통과가 없다. 리뷰 요청과 머지는 PR을 맡은 세션이 BOSS 계정으로 한다. PR 제목·본문·댓글에는 리뷰 요청 댓글 말고는 `@codex` 문자열을 쓰지 않는다(백틱 안도 클라우드 작업을 부른다). 2분 안에 리뷰 요약이 없을 때, 새 커밋 push·무효 표식 뒤, `running` 10분 정지 시 요청하고, 머지는 `codex-review` success와 미해결 thread 0일 때 `--match-head-commit`으로 auto-merge를 켠다(draft·`no-auto-merge` 제외). 절차: [리모트 저장소 운영](docs/repository-operations.md).
 - 저장소 설정(2026-10-23, `sensibile/taeguk`과 동일 구성): squash merge만 허용(제목·본문은 PR 제목·본문), auto-merge 허용, Dependabot alerts·security updates, secret scanning·push protection, CodeQL default setup(actions, python). taeguk과의 차이는 필수 체크 이름(저장소별 CI `documentation-policy`)뿐이다. 최신 main 기준 검사(strict)는 taeguk과 같게 사용하지 않는다.
 
