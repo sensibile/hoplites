@@ -2,7 +2,7 @@
 
 이 문서는 `sensibile/hoplites` PR을 Claude Code 세션이 맡을 때의 리뷰·머지 절차와 Codex 리뷰 gate를 기록한다. 위임 범위와 서버 정책의 원본은 AGENTS.md의 "리모트 저장소 위임 범위"다. 이 문서는 GitHub 권한을 부여하거나 제한하지 않는다. 실제 강제는 GitHub ruleset이 한다. 결정 배경은 [ADR 0011](adr/0011-codex-review-gate.md)에 있다.
 
-gate 구현은 `sensibile/taeguk` main `062d95d`(읽기 실패 처리는 `cfabbe9`)의 `scripts/codex_review_gate.py`, `tests/test_codex_review_gate.py`, `.github/workflows/codex-review-gate.yml`을 가져왔다. 스크립트는 Ruff 포맷만 적용했으며 AST가 원본과 같다. 테스트는 저장소 이름과 import 방식만 바꿨다. workflow는 이 저장소 관례대로 `actions/checkout`을 커밋 SHA로 고정했다. 아래 근거의 PR 번호는 따로 적지 않으면 `sensibile/taeguk` PR이다.
+gate 구현은 `sensibile/taeguk` main `062d95d`(읽기 실패 처리는 `cfabbe9`, 무효 표식 실패 처리는 `f761a32`·`c759d26`)의 `scripts/codex_review_gate.py`, `tests/test_codex_review_gate.py`, `.github/workflows/codex-review-gate.yml`을 가져왔다. 스크립트는 Ruff 포맷만 적용했으며 AST가 원본과 같다. 테스트는 저장소 이름과 import 방식만 바꿨다. workflow는 이 저장소 관례대로 `actions/checkout`을 커밋 SHA로 고정했다. 아래 근거의 PR 번호는 따로 적지 않으면 `sensibile/taeguk` PR이다.
 
 ## PR 플로우
 
@@ -20,12 +20,12 @@ gate 구현은 `sensibile/taeguk` main `062d95d`(읽기 실패 처리는 `cfabbe
 - 리뷰 thread를 해결하는 이벤트로는 gate가 다시 실행되지 않는다. thread를 해결한 뒤에는 다음 이벤트가 있어야 다시 판정한다.
 - 시간이 지나도 판정은 바뀌지 않는다. Codex가 그 head를 리뷰하지 않으면 status는 pending에 머물고 PR은 머지되지 않는다. 새 커밋을 push하면 pending으로 돌아간다.
 - 댓글이나 status 조회가 실패해 근거를 읽지 못하면 gate는 pending을 게시한 뒤 실패로 끝난다. 같은 head에 남아 있던 이전 success가 바뀐 리뷰 대신 머지 조건을 채우지 않게 하기 위해서다(`sensibile/acropolis` PR #9 Codex 지적, taeguk `cfabbe9`). pending 게시마저 실패하면 이전 status가 남으므로, gate job이 실패하면 세션이 status를 다시 확인한다.
-- Codex 요약 댓글이 삭제되거나 PR base가 바뀌면 gate가 이전 리뷰를 무효로 표시하는 댓글(head 표식 포함)을 남긴다. 무효 표시 이후 Codex가 요약을 갱신해야 다시 판정한다.
+- Codex 요약 댓글이 삭제되거나 PR base가 바뀌면 gate가 이전 리뷰를 무효로 표시하는 댓글(head 표식 포함)을 남긴다. 이 댓글을 남기지 못하면 `record` job이 pending을 게시한 뒤 실패로 끝난다. `record`가 실패하면 `gate` job은 건너뛰므로, 그대로 두면 이전 success가 남기 때문이다(taeguk `f761a32`). 이때 남긴 pending status("Codex review evidence was invalidated but could not be recorded")는 무효 표식 댓글을 대신한다. gate는 `github-actions[bot]`이 남긴 이 status가 Codex 요약의 마지막 갱신과 같은 초이거나 그보다 나중이면, 또는 시각을 읽을 수 없으면 pending으로 판정한다. 댓글 표식도 같은 초면 무효로 본다. 무효는 요약이 확실히 나중에 갱신돼야 풀리므로, 다음 gate 실행이나 동시에 돌던 gate가 바뀌지 않은 요약을 읽고 success로 되돌리지 못한다. gate는 success를 게시한 뒤 근거를 한 번 더 읽고, 그사이 생긴 무효가 있으면 pending으로 바꾼다. 마지막으로 읽은 뒤 무효가 생기는 아주 짧은 구간은 남는다(taeguk `c759d26`). 무효 표시 이후 Codex가 요약을 갱신해야 다시 판정한다.
 - 2026-10-25 BOSS 결정으로 시간 기준 규칙(10분 간격 재요청, 3회 무응답 시 통과), gate의 `@codex review` 요청, 주기 실행, gate의 auto-merge를 두지 않는다. Codex가 `github-actions[bot]`의 요청에 응답하지 않아 시간 기준 규칙이 사실상 "판정이 멈추면 약 40분 뒤 리뷰 없이 통과"로 작동했기 때문이다.
 
 요약 댓글의 상태 표식은 Codex의 공개 API가 아니다. 형식이 바뀌어 읽을 수 없으면 gate는 pending으로 남고 필수 체크가 막혀 머지되지 않는다. 이 경우 Codex 결과를 직접 확인하고 BOSS 확인을 받아 처리한다.
 
-gate workflow는 `pull_request_target`과 `issue_comment`로만 실행된다. 두 이벤트 모두 기본 브랜치의 workflow와 스크립트를 실행하므로 PR이 자기 판정 코드를 바꿀 수 없다. `gate` job 권한은 `statuses: write` 외에는 read이고, 무효 표식을 남기는 `record` job만 `issues: write`를 갖는다. 다만 push 권한이 있는 사람은 다른 workflow로 `GITHUB_TOKEN` status를 게시할 수 있다. gate는 저장소 writer를 신뢰하는 전제의 자동화이며 writer에 대한 보안 경계가 아니다. fork PR과 기본 브랜치가 아닌 base로 향하는 PR은 처리하지 않는다. commit status는 PR이 아니라 커밋 SHA에 붙으므로, 같은 head를 공유하는 다른 base PR의 결과가 `main` PR 판정을 덮어쓰지 않게 하기 위해서다.
+gate workflow는 `pull_request_target`과 `issue_comment`로만 실행된다. 두 이벤트 모두 기본 브랜치의 workflow와 스크립트를 실행하므로 PR이 자기 판정 코드를 바꿀 수 없다. `gate` job 권한은 `statuses: write` 외에는 read이고, 무효 표식을 남기는 `record` job만 `issues: write`를 갖고, 표식을 남기지 못했을 때 pending을 게시하도록 `statuses: write`도 갖는다. 다만 push 권한이 있는 사람은 다른 workflow로 `GITHUB_TOKEN` status를 게시할 수 있다. gate는 저장소 writer를 신뢰하는 전제의 자동화이며 writer에 대한 보안 경계가 아니다. fork PR과 기본 브랜치가 아닌 base로 향하는 PR은 처리하지 않는다. commit status는 PR이 아니라 커밋 SHA에 붙으므로, 같은 head를 공유하는 다른 base PR의 결과가 `main` PR 판정을 덮어쓰지 않게 하기 위해서다.
 
 workflow는 job 두 개로 나뉜다. `record` job은 직렬화하지 않으며, 리뷰를 무효로 만드는 이벤트를 PR 댓글 표식으로 남기는 일만 한다. `gate` job은 PR별로 직렬화되어 판정을 차례로 게시하고, 이벤트 내용이 아니라 PR의 현재 상태(댓글, head, base)로만 판정한다. GitHub concurrency는 대기 중인 job을 나중 job으로 교체하지만, 교체한 job은 더 늦게 대기열에 들어왔으므로 같거나 더 새로운 상태를 읽는다. 판정은 success를 게시하기 직전에 한 번 더 확인한다.
 

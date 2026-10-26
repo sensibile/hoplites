@@ -23,10 +23,11 @@ gate가 bot 계정으로 리뷰를 요청하는 방식은 Codex가 응답하지 
 
 ## 검증 근거
 
-- 가져온 스크립트는 Ruff 포맷 후 AST가 원본과 같다. 테스트 22개를 로컬과 `codex-review-gate-tests` workflow에서 실행한다.
+- 가져온 스크립트는 Ruff 포맷 후 AST가 원본과 같다. 도입 당시 테스트 22개(2026-10-26 보완 후 30개)를 로컬과 `codex-review-gate-tests` workflow에서 실행한다.
 - ruleset 반영과 gate의 실제 status 게시는 gate PR 머지 뒤 API로 확인하고 그 결과를 PR 기록에 남긴다.
 
 ## 2026-10-26 보완
 
 - `sensibile/acropolis` PR #9의 Codex 지적에 따라 taeguk `cfabbe9`를 반영했다. 댓글이나 status 조회가 실패하면 gate가 pending을 게시한 뒤 실패로 끝난다.
 - 같은 PR의 다른 지적은 문서 전용 PR의 리뷰 면제와 `codex-review` 필수 체크가 충돌한다는 내용이었다. BOSS 결정으로 문서 전용 면제는 로컬 push gate(Codex Security 검사·독립 리뷰)에만 적용한다. 문서 전용 PR도 GitHub Codex PR 리뷰와 `codex-review` success를 거쳐 머지한다. gate 코드는 taeguk 원본과 같게 두고 문서 판별 로직을 넣지 않는다.
+- taeguk `f761a32`를 반영했다. `record` job이 무효 표식 댓글을 남기지 못하면 pending을 게시한 뒤 실패로 끝난다. 이를 위해 `record` job에 `statuses: write`를 더했다. 이어 `c759d26`을 반영해, 그 pending status를 무효 표식 대신 영구 무효 근거로 쓰고 같은 초도 무효로 보며 success 게시 뒤 근거를 다시 읽는다.
