@@ -236,12 +236,8 @@ def run(repo, number, invalidate=False, call=gh):
             f"body=Codex review evidence for this head was invalidated; a new Codex review is needed.\n\n{invalidation_marker(head)}",
         )
         return {"pr": number, "head": head, "actions": ["invalidated_codex_review"]}
-    state, comments, status, description = judge(repo, number, head, call)
-    if status == "success":
-        # Re-read right before publishing success to narrow the window for
-        # evidence that changed while this run was working.
-        state, comments, status, description = judge(repo, number, head, call)
-    if current_status(repo, head, call) != (status, description):
+
+    def publish(status, description):
         call(
             "api",
             "-X",
@@ -256,6 +252,21 @@ def run(repo, number, invalidate=False, call=gh):
             "-f",
             f"target_url={pr['html_url']}",
         )
+
+    try:
+        state, comments, status, description = judge(repo, number, head, call)
+        if status == "success":
+            # Re-read right before publishing success to narrow the window for
+            # evidence that changed while this run was working.
+            state, comments, status, description = judge(repo, number, head, call)
+        unchanged = current_status(repo, head, call) == (status, description)
+    except (subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+        # An older success on this head must not outlive evidence this run failed
+        # to read, so block before failing the run.
+        publish("pending", "Codex review evidence could not be read; waiting for the next gate run")
+        raise
+    if not unchanged:
+        publish(status, description)
     return {"pr": number, "head": head, "status": status, "description": description, "actions": []}
 
 

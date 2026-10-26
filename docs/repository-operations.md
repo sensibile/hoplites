@@ -2,7 +2,7 @@
 
 이 문서는 `sensibile/hoplites` PR을 Claude Code 세션이 맡을 때의 리뷰·머지 절차와 Codex 리뷰 gate를 기록한다. 위임 범위와 서버 정책의 원본은 AGENTS.md의 "리모트 저장소 위임 범위"다. 이 문서는 GitHub 권한을 부여하거나 제한하지 않는다. 실제 강제는 GitHub ruleset이 한다. 결정 배경은 [ADR 0011](adr/0011-codex-review-gate.md)에 있다.
 
-gate 구현은 `sensibile/taeguk` main `062d95d`의 `scripts/codex_review_gate.py`, `tests/test_codex_review_gate.py`, `.github/workflows/codex-review-gate.yml`을 가져왔다. 스크립트는 Ruff 포맷만 적용했으며 AST가 원본과 같다. 테스트는 저장소 이름과 import 방식만 바꿨다. workflow는 이 저장소 관례대로 `actions/checkout`을 커밋 SHA로 고정했다. 아래 근거의 PR 번호는 따로 적지 않으면 `sensibile/taeguk` PR이다.
+gate 구현은 `sensibile/taeguk` main `062d95d`(읽기 실패 처리는 `cfabbe9`)의 `scripts/codex_review_gate.py`, `tests/test_codex_review_gate.py`, `.github/workflows/codex-review-gate.yml`을 가져왔다. 스크립트는 Ruff 포맷만 적용했으며 AST가 원본과 같다. 테스트는 저장소 이름과 import 방식만 바꿨다. workflow는 이 저장소 관례대로 `actions/checkout`을 커밋 SHA로 고정했다. 아래 근거의 PR 번호는 따로 적지 않으면 `sensibile/taeguk` PR이다.
 
 ## PR 플로우
 
@@ -19,6 +19,7 @@ gate 구현은 `sensibile/taeguk` main `062d95d`의 `scripts/codex_review_gate.p
 
 - 리뷰 thread를 해결하는 이벤트로는 gate가 다시 실행되지 않는다. thread를 해결한 뒤에는 다음 이벤트가 있어야 다시 판정한다.
 - 시간이 지나도 판정은 바뀌지 않는다. Codex가 그 head를 리뷰하지 않으면 status는 pending에 머물고 PR은 머지되지 않는다. 새 커밋을 push하면 pending으로 돌아간다.
+- 댓글이나 status 조회가 실패해 근거를 읽지 못하면 gate는 pending을 게시한 뒤 실패로 끝난다. 같은 head에 남아 있던 이전 success가 바뀐 리뷰 대신 머지 조건을 채우지 않게 하기 위해서다(`sensibile/acropolis` PR #9 Codex 지적, taeguk `cfabbe9`). pending 게시마저 실패하면 이전 status가 남으므로, gate job이 실패하면 세션이 status를 다시 확인한다.
 - Codex 요약 댓글이 삭제되거나 PR base가 바뀌면 gate가 이전 리뷰를 무효로 표시하는 댓글(head 표식 포함)을 남긴다. 무효 표시 이후 Codex가 요약을 갱신해야 다시 판정한다.
 - 2026-10-25 BOSS 결정으로 시간 기준 규칙(10분 간격 재요청, 3회 무응답 시 통과), gate의 `@codex review` 요청, 주기 실행, gate의 auto-merge를 두지 않는다. Codex가 `github-actions[bot]`의 요청에 응답하지 않아 시간 기준 규칙이 사실상 "판정이 멈추면 약 40분 뒤 리뷰 없이 통과"로 작동했기 때문이다.
 
