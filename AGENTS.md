@@ -79,7 +79,7 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 
 - 문서만 변경한 작업은 내용 일관성, 로컬 링크와 `git diff --check`를 확인한다. 실행 코드·테스트·빌드/배포 설정·의존성·migration·실행 가능한 보안 통제가 바뀌지 않았으면 Codex Security와 독립 리뷰를 필수로 실행하지 않는다. AGENTS.md와 작업 절차·ADR 같은 지침 문서도 이 구분을 적용한다.
 - 코드 또는 실행 설정이 포함된 작업은 변경에 맞는 테스트와 아래 보안·독립 리뷰 절차를 적용한다. 파일 확장자만으로 문서 전용이라고 판단하지 않는다.
-- 문서 전용 변경은 누적 PR 범위를 pre-push 문서 gate와 GitHub documentation-policy로 검증한다. hooksPath 우회는 허용하지 않는다. 검증 통과 후 PR·merge까지 진행한다.
+- 문서 전용 변경은 누적 PR 범위를 pre-push 문서 gate와 GitHub documentation-policy로 검증한다. hooksPath 우회는 허용하지 않는다. 검증 통과 후 PR·merge까지 진행한다. 머지는 코드 PR과 같이 GitHub Codex PR 리뷰와 `codex-review` success를 거친다.
 
 ## Codex Push Preparation
 
@@ -105,7 +105,7 @@ Hoplites의 최종 목표는 납품·배포 아티팩트의 구성요소를 파�
 ## 공통 문서 gate 및 브랜치 정책
 
 - 새 브랜치는 `feat|fix|refactor|test|docs|chore` 중 작업 의도에 맞는 `<type>/<short-task-slug>`를 사용한다. `codex/` 기본값보다 우선한다.
-- [문서 작업 규칙](docs/documentation-policy.md)을 적용한다. 문서 전용 작업은 문서 gate를 통과하면 코드·독립·보안 리뷰를 생략한다. 코드 또는 실행 설정 변경이 섞이면 기존 리뷰 절차를 적용한다.
+- [문서 작업 규칙](docs/documentation-policy.md)을 적용한다. 문서 전용 작업은 문서 gate를 통과하면 코드 리뷰 절차인 로컬 push gate(Codex Security 검사·독립 리뷰)를 생략한다. GitHub Codex PR 리뷰와 필수 체크 `codex-review`는 면제하지 않는다(2026-10-26 BOSS 결정). 코드 또는 실행 설정 변경이 섞이면 기존 리뷰 절차를 적용한다.
 - 문서 gate 구현·변경 자체는 코드 작업이다. 자동 commit 권한이 코드 push·merge나 실패한 gate 우회를 허용하지 않는다.
 
 ## 정보 보강 완료 보고의 실행 검사

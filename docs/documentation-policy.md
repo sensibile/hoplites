@@ -4,7 +4,7 @@
 
 문서 전용 작업은 루트의 AGENTS.md, DEVELOPMENT.md, README.md, CONTRIBUTING.md, SECURITY.md, CHANGELOG.md, DOCUMENTATION.md 및 docs/ 아래 Markdown의 일반 파일 변경만 포함한다. 스크립트, 소스, 테스트, 의존성, CI, 빌드·배포 설정, 실행 권한, symlink, submodule 변경이 섞이면 코드 작업이다. 파일 이름이나 브랜치 접두어만으로 리뷰를 면제하지 않는다. 문서에 담긴 실행 예제나 명령을 실제 동작 변경의 대체물로 사용하지 않는다. 인용문·목록 안의 fenced code block과 들여쓰기 코드 블록을 포함해 코드 블록의 추가·변경·삭제는 보수적으로 코드 작업으로 분류한다. 네 칸 이상의 들여쓰기는 문법이 모호해도 코드 경로로 분류한다. 그 밖의 실행 예제를 바꾸면 코드 작업으로 검토하고 자동 면제 경로를 사용하지 않는다. 문서 전용 자동 경로의 PR 대상은 main이다. Git upstream 추적 브랜치는 PR 대상의 근거로 사용하지 않는다. GitHub 문서 gate가 문서 전용 PR의 실제 대상을 확인한다. 다른 대상은 기존 리뷰 gate를 따른다.
 
-문서 전용 작업은 작성자가 요청 충족과 내용 일관성, 근거와 미검증 범위, 예제 변경 여부를 확인한 뒤 문서 gate를 실행한다. 코드·보안·독립 리뷰를 생략한 이유를 PR에 적는다. 통과하면 별도 승인 없이 commit, push, PR 생성과 squash merge까지 진행한다. 실패한 검사나 보호 정책을 우회하거나 관리자 강제 merge하지 않는다. 코드 작업도 검증된 한 의도 단위로 자동 commit하되 push와 merge는 BOSS의 승인 범위를 따른다.
+문서 전용 작업은 작성자가 요청 충족과 내용 일관성, 근거와 미검증 범위, 예제 변경 여부를 확인한 뒤 문서 gate를 실행한다. 로컬 push gate의 보안 검사·독립 리뷰를 생략한 이유를 PR에 적는다. 통과하면 별도 승인 없이 commit, push, PR 생성을 진행하고, [리모트 저장소 운영](repository-operations.md)대로 GitHub Codex PR 리뷰와 `codex-review` success를 거쳐 squash merge한다. 문서 전용 면제는 Codex PR 리뷰와 필수 체크 `codex-review`에 적용하지 않는다(2026-10-26 BOSS 결정). 실패한 검사나 보호 정책을 우회하거나 관리자 강제 merge하지 않는다. 코드 작업도 검증된 한 의도 단위로 자동 commit하되 push와 merge는 BOSS의 승인 범위를 따른다.
 
 ## 작성 규칙
 
