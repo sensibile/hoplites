@@ -133,6 +133,23 @@ def location(step):
     }
 
 
+def scan_problems(sarif_doc, raw_docs):
+    """Engine-reported errors and notifications, so a partial scan is not read as complete."""
+    notes = [
+        n.get("message", {}).get("text", "")
+        for run in sarif_doc.get("runs", [])
+        for inv in run.get("invocations", [])
+        for n in inv.get("toolExecutionNotifications", [])
+    ]
+    errors = [e for doc in raw_docs if isinstance(doc, dict) for e in doc.get("errors", [])]
+    return {
+        "errors": len(errors),
+        "error_samples": [str(e)[:300] for e in errors[:5]],
+        "sarif_notifications": len(notes),
+        "notification_samples": [n[:300] for n in notes[:5]],
+    }
+
+
 def flows_to_sarif(doc, args):
     """Convert Joern flows to SARIF 2.1.0: one result per (rule, sink line), shortest path kept.
 
@@ -196,6 +213,10 @@ def main():
             "files": len(files),
         },
         "outputs": {p.name: sha256(p) for p in [result["sarif"], *result["raw"]]},
+        "scan_problems": scan_problems(
+            json.loads(result["sarif"].read_text()),
+            [json.loads(p.read_text()) for p in result["raw"] if p.exists()],
+        ),
     }
     (out / "manifest.json").write_text(
         json.dumps(manifest, ensure_ascii=False, indent=2, default=str) + "\n"

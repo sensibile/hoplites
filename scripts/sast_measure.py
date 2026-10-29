@@ -141,6 +141,11 @@ def union(findings_by_config, names):
 def measure(truth, findings_by_config, unions=None):
     matrices = {name: config_matrix(truth, fs) for name, fs in findings_by_config.items()}
     for label, names in (unions or {}).items():
+        if label in findings_by_config:
+            raise ValueError(f"union label {label!r} collides with a config")
+        unknown = [n for n in names if n not in findings_by_config]
+        if unknown:
+            raise ValueError(f"union {label!r} names unknown configs {unknown}")
         matrices[label] = config_matrix(truth, union(findings_by_config, names))
     singles = {k: v for k, v in matrices.items() if k in findings_by_config}
     return {

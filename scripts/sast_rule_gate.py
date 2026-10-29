@@ -85,16 +85,15 @@ def judge(rules, truth, confirmed_cases, baseline, candidate, rule_only):
 
 def load_rules(paths):
     """Read rule metadata from opengrep YAML (top-level `rules:` list) or Joern model JSON."""
-    import yaml
-
     out = []
     for p in paths:
         if p.suffix == ".json":
             model = json.loads(p.read_text())
-            for s in model["sinks"] + model.get("source_rules", []):
-                if "regression_cases" in s:
-                    out.append({"id": s["id"], "regression_cases": s["regression_cases"]})
+            for s in model["sinks"]:
+                out.append({"id": s["id"], "regression_cases": s.get("regression_cases", [])})
             continue
+        import yaml
+
         for r in yaml.safe_load(p.read_text())["rules"]:
             meta = r.get("metadata", {})
             out.append(
@@ -118,6 +117,8 @@ def main():
     )
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.output.exists():
+        parser.error("Use a new output file")
     truth = json.loads(args.truth.read_text())
     m = json.loads(args.measure.read_text())["matrices"]
     conf = json.loads(args.confirmed_measure.read_text())["matrices"]["agent-confirmed"]["cases"]

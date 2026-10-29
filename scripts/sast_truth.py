@@ -67,6 +67,8 @@ def resolve(spec, sources):
         pair = case.get("pair")
         if pair is not None and by_id.get(pair, {}).get("pair") != case["id"]:
             raise ValueError(f"{case['id']}: pair {pair!r} is not reciprocal")
+        if pair is not None and by_id[pair]["polarity"] == case["polarity"]:
+            raise ValueError(f"{case['id']}: pair {pair!r} has the same polarity")
         sink = case["sink"]
         if sink["path"] not in sources:
             raise ValueError(f"{case['id']}: missing file {sink['path']}")
@@ -107,6 +109,8 @@ def main():
     parser.add_argument("--root", type=Path, help="Seed set root (default: spec directory)")
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
+    if args.output.exists():
+        parser.error("Use a new output file")
     root = args.root or args.spec.parent
     files = read_tree(root)
     truth = resolve(json.loads(args.spec.read_text()), {k: v.decode() for k, v in files.items()})

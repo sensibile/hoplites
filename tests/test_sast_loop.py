@@ -1,8 +1,10 @@
+import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).parents[1]
@@ -10,7 +12,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 from sast_agent import findings as agent_findings  # noqa: E402
 from sast_measure import config_matrix, measure  # noqa: E402
 from sast_normalize import normalize  # noqa: E402
-from sast_rule_gate import judge  # noqa: E402
+from sast_rule_gate import judge, load_rules  # noqa: E402
 from sast_truth import resolve  # noqa: E402
 
 SOURCE = """\
@@ -81,6 +83,15 @@ class TruthTests(unittest.TestCase):
             resolve(
                 spec(
                     [case("V", "vulnerable", None, "view"), case("W", "vulnerable", None, "view")]
+                ),
+                {"app/a.py": SOURCE},
+            )
+
+    def test_pair_must_have_opposite_polarity(self):
+        with self.assertRaisesRegex(ValueError, "same polarity"):
+            resolve(
+                spec(
+                    [case("V", "vulnerable", "W", "view"), case("W", "vulnerable", "V", "view_v2")]
                 ),
                 {"app/a.py": SOURCE},
             )
@@ -157,6 +168,12 @@ class MeasureTests(unittest.TestCase):
         self.assertEqual(result["matrices"]["a"]["total"]["unlabeled_in_scope"], 1)
         self.assertEqual([d["case"] for d in result["disagreements"]], ["V"])
 
+    def test_union_label_must_not_shadow_or_name_unknown_configs(self):
+        with self.assertRaisesRegex(ValueError, "collides"):
+            measure(TRUTH, {"a": []}, {"a": ["a"]})
+        with self.assertRaisesRegex(ValueError, "unknown"):
+            measure(TRUTH, {"a": []}, {"u": ["a", "b"]})
+
 
 class AgentTests(unittest.TestCase):
     DOC = {
@@ -212,6 +229,61 @@ class GateTests(unittest.TestCase):
     def test_precision_regression_blocks_set(self):
         result = self.gate([finding(3)], [finding(3), finding(7, rule="other")], [finding(3)])
         self.assertIn("paired precision 1.0 -> 0.5", result["set"]["problems"])
+
+
+class OutputGuardTests(unittest.TestCase):
+    """Collection and judgment outputs are evidence: a second run must not replace them."""
+
+    def test_scripts_refuse_existing_output(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "out.json"
+            out.write_text("kept")
+            spec_file = Path(tmp) / "truth-spec.json"
+            spec_file.write_text(json.dumps(spec([])))
+            commands = [
+                ["sast_truth.py", str(spec_file), "--output", str(out)],
+                [
+                    "sast_rule_gate.py",
+                    "--rules",
+                    str(spec_file),
+                    "--truth",
+                    str(spec_file),
+                    "--confirmed-measure",
+                    str(spec_file),
+                    "--measure",
+                    str(spec_file),
+                    "--baseline",
+                    "a",
+                    "--candidate",
+                    "b",
+                    "--rule-only",
+                    "c",
+                    "--output",
+                    str(out),
+                ],
+            ]
+            for command in commands:
+                done = subprocess.run(
+                    [sys.executable, str(ROOT / "scripts" / command[0]), *command[1:]],
+                    capture_output=True,
+                    text=True,
+                )
+                self.assertNotEqual(done.returncode, 0)
+                self.assertIn("Use a new output file", done.stderr)
+            self.assertEqual(out.read_text(), "kept")
+
+
+class RuleLoadingTests(unittest.TestCase):
+    def test_joern_sinks_without_regression_cases_are_judged(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            model = Path(tmp) / "model.json"
+            model.write_text(
+                json.dumps({"sinks": [{"id": "s1", "regression_cases": ["V"]}, {"id": "s2"}]})
+            )
+            self.assertEqual(
+                load_rules([model]),
+                [{"id": "s1", "regression_cases": ["V"]}, {"id": "s2", "regression_cases": []}],
+            )
 
 
 OPENGREP = os.environ.get("OPENGREP") or shutil.which("opengrep")

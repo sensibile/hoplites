@@ -2,7 +2,7 @@
 
 2026-10-30. SAST 방향 C 단계("엔진 결과를 LLM 에이전트가 트리아지·보완하는 계층")의 첫 실험이다. 엔진 기준선, 에이전트 탐색 증가분, 합성 룰 편입 후 재측정을 비공개 정답 세트 두 개로 측정했다. 결정은 [ADR-0013](adr/0013-sast-engine-agent-loop.md), 의도 초안은 [intent/2026-10-30-sast-agent-loop.md](../intent/2026-10-30-sast-agent-loop.md)에 있다.
 
-**결론: 무료 엔진 3종(Bandit, opengrep + opengrep-rules, Joern + 기준 모델)을 합쳐도 독립 holdout 세트에서 취약 15건 중 9건만 탐지했다. CWE-22와 CWE-918은 0/3이었다. 같은 조건에서 에이전트 가설은 15건 모두 PoC로 confirmed됐고 수정본 오경보는 0건이었다. dev 세트의 confirmed 케이스로 합성한 opengrep 룰 11개는 dev gate를 모두 통과했다(dev 단독 19/19, 오경보 0). 그러나 holdout에서는 단독 6/15에 그쳤고 엔진 합집합에 더한 탐지 증가는 0건이었다. 합성 룰의 dev 수치는 과적합이다. 현재 근거로는 "CWE-78·89·502는 엔진 조합으로 대부분 탐지되지만 수정본 오경보가 많고, CWE-22·918은 엔진에 맡길 수 없다"까지만 말할 수 있다. 에이전트 수치는 정답 작성자와 같은 모델 계열이라 과대평가 가능성이 크며, 신뢰 판단에 쓰려면 다른 작성자의 세트로 다시 재야 한다.**
+**결론: 무료 엔진 3종(Bandit, opengrep + opengrep-rules, Joern + 기준 모델)을 합쳐도 독립 holdout 세트에서 취약 15건 중 9건만 탐지했다. CWE-22와 CWE-918은 0/3이었다. 같은 조건에서 에이전트 가설 15건은 모두 정답 사례 위치와 일치했고 수정본 오경보는 0건이었다. 단 confirmed 판정은 정답을 아는 운영자(이 세션)가 가설을 정답 사례에 대응시킨 뒤 그 사례의 기존 PoC를 재사용한 결과다. 가설에서 독립적으로 만든 PoC가 아니므로 confirmed 15/15는 "가설 위치가 정답 사례와 일치한다"는 판정 이상의 근거가 아니다. dev 세트의 confirmed 케이스로 합성한 opengrep 룰 11개는 dev gate를 모두 통과했다(dev 단독 19/19, 오경보 0). 그러나 holdout에서는 단독 6/15에 그쳤고 엔진 합집합에 더한 탐지 증가는 0건이었다. 합성 룰의 dev 수치는 과적합이다. 현재 근거로는 "CWE-78·89·502는 엔진 조합으로 대부분 탐지되지만 수정본 오경보가 많고, CWE-22·918은 엔진에 맡길 수 없다"까지만 말할 수 있다. 에이전트 수치는 정답 작성자와 같은 모델 계열이라 과대평가 가능성이 크며, 신뢰 판단에 쓰려면 다른 작성자의 세트로 다시 재야 한다.**
 
 ## 작업 계약
 
@@ -96,7 +96,7 @@ holdout(취약 15, 수정본·음성 18).
 
 ## 에이전트 탐색 증가분
 
-가설은 모두 `inferred`로 기록하고, 가설의 진입점으로 공격을 보내 성공한 PoC만 `confirmed`로 올렸다. 가설 위치가 정답 사례와 같으면 그 사례의 PoC를 그대로 썼다. "비취약" 판정은 `coverage.json`에 coverage 기록으로만 남겼다(dev 25건, holdout 28건).
+가설은 모두 `inferred`로 기록하고, 가설의 진입점으로 공격을 보내 성공한 PoC만 `confirmed`로 올렸다. 이번에는 dev 19건, holdout 15건 모두 가설의 진입점·sink가 정답 사례와 일치해, 정답을 아는 운영자(이 세션, claude-opus-5-5)가 가설을 정답 사례에 대응시키고 그 사례의 PoC를 그대로 실행했다(seed `*/poc/agent-confirmations.json`, `test_agent.py`). 이 대응은 MET-001의 판정 단계이며 독립 증거가 아니다. 정답과 일치하지 않는 가설이 없었으므로, 가설만 보고 PoC를 새로 쓰는 경로는 이번에 시험되지 않았다. "비취약" 판정은 `coverage.json`에 coverage 기록으로만 남겼다(dev 25건, holdout 28건).
 
 | 세트 | 가설(inferred) | confirmed | 수정본 오경보 | 엔진 합집합 | 엔진 + 에이전트 | 에이전트만 잡은 사례 |
 | --- | ---: | ---: | ---: | ---: | ---: | --- |
@@ -104,7 +104,7 @@ holdout(취약 15, 수정본·음성 18).
 | holdout | 15 | 15 | 0 | 9/15 | 15/15 | CWE-22 3건, CWE-918 3건 전부 |
 
 - 엔진만 울린 사례는 모두 수정본·음성이었다(dev 14, holdout 7). 엔진이 잡고 에이전트가 놓친 취약 사례는 없다.
-- 해석 한계: 정답 작성자(dev는 이 세션, holdout은 서브에이전트)와 탐색 에이전트가 같은 모델이다. 앱 규모가 작고(16·24파일) 취약 패턴이 교과서적이다. 실제 코드에서의 에이전트 탐지율·정밀도 근거로 쓰지 않는다.
+- 해석 한계: confirmed는 정답 PoC 재사용이다(위). 정답 작성자(dev는 이 세션, holdout은 서브에이전트)와 탐색 에이전트가 같은 모델이다. 앱 규모가 작고(16·24파일) 취약 패턴이 교과서적이다. 실제 코드에서의 에이전트 탐지율·정밀도 근거로 쓰지 않는다.
 - dev 에이전트는 coverage 기록에서 D-918-1F(정확한 호스트 allowlist 뒤 `requests.get`)가 리다이렉트를 따라가는 잔여 위험을 적었다. 정답은 이 경로를 "수정본"으로 두었다. 허용 호스트가 신뢰된다는 가정에 기댄 판정이므로 미해결로 남긴다.
 
 ## 룰 합성과 승격 gate
@@ -120,7 +120,7 @@ gate(`sast_rule_gate.py`, v1)는 dev에서 세 가지를 모두 요구한다: (1
 | 대상 | 결과 |
 | --- | --- |
 | opengrep 합성 룰 11개 | 11/11 통과. 기준 15/19·오경보 7·정밀도 0.68 → 편입 후 19/19·오경보 7·정밀도 0.73, 새 정답 밖 결과 0 |
-| Joern 모델 v1(sanitizer 4개 추가) | 불합격. 6개 sink 룰 중 2개만 통과했고 4개는 수정본에 울렸다. v0를 Joern 기준으로 유지한다([model-v1.json](../policies/sast/python/joern/model-v1.json)에 판정 기록) |
+| Joern 모델 v1(sanitizer 4개 추가) | 불합격. 7개 sink 룰 중 2개만 통과했다. 4개는 수정본에 울렸고 `cwe-918.urlopen`은 회귀 사례가 없다. v0를 Joern 기준으로 유지한다([model-v1.json](../policies/sast/python/joern/model-v1.json)에 판정 기록) |
 
 ## 편입 후 재측정 (엔진만)
 
@@ -145,7 +145,7 @@ holdout에서 합성 룰이 엔진 합집합에 더한 탐지는 0건이다. 합
 | 파일 간 흐름 | Joern 0/6·0/5, opengrep은 패턴 룰로만 일부 탐지. opengrep v2 interfile 프리릴리스는 이름상 Python 제외(`nopython`) | Joern 파일 간 호출 해석 원인 조사(import 해석 옵션), CodeQL 라이선스 확인 후 비교 |
 | 수정본 오경보 | 엔진 합집합 오경보 dev 14/21, holdout 7/18. Bandit·audit 룰이 sanitizer와 무관하게 울림 | 에이전트 트리아지로 오경보를 coverage로 분류하는 단계 측정(이번에 하지 않음) |
 | CWE 표기 불일치 | Bandit `yaml.load`=CWE-20, B310=CWE-22, opengrep-rules `urlopen`=CWE-939 | 엔진 룰별 CWE 재매핑 표를 사전 정의하고 strict 매칭에 적용할지 결정 |
-| 에이전트 평가 독립성 | 작성자·탐색자 같은 모델, 작은 앱 | 다른 모델 계열·사람이 작성한 비공개 세트, 실제 납품 코드 표본 |
+| 에이전트 평가 독립성 | 작성자·탐색자 같은 모델, 작은 앱, confirmed가 정답 PoC 재사용 | 다른 모델 계열·사람이 작성한 비공개 세트, 실제 납품 코드 표본. PoC는 정답을 모르는 실행자가 가설만 보고 작성 |
 | dev D-918-1F 잔여 위험 | 리다이렉트 추종(에이전트 coverage 기록) | 정답 정의에 리다이렉트 정책 포함 여부 결정 |
 | 공개 벤치마크 기준선 | NOT_RUN | OWASP Benchmark Python 등은 엔진 기준선 참고로만 실행 |
 | 정답 밖 결과 판정 | dev 8건, holdout 9건(엔진 합집합 범위 CWE) 미판정. 대부분 Bandit import 경고(B403·B404)와 SQL 조립 줄 | 판정 기록 파일을 두고 사람 확인 |
@@ -163,11 +163,11 @@ holdout에서 합성 룰이 엔진 합집합에 더한 탐지는 0건이다. 합
 | --- | --- | --- |
 | opengrep-cwe 조사 | PASS | 위 절 |
 | 정답 세트(dev·holdout, 양성·음성 쌍, 파일 간·함수 간 포함) | PASS | PoC 40/40, 33/33 |
-| 엔진 SARIF 보존·정규화 | PASS | seed `runs/2026-10-30`, 각 `manifest.json` |
+| 엔진 SARIF 보존·정규화 | PASS | seed `runs/2026-10-30`, 각 `manifest.json`. 엔진 보고 오류·SARIF 알림은 모든 실행에서 0건(사후 재확인, 이후 실행은 `manifest.json`의 `scan_problems`에 기록) |
 | 엔진 기준선 매트릭스·불일치 | PASS | 위 표. 불일치 사례별 원인 조사는 유형 분류까지만 함 |
 | `joern-scan` 기본 쿼리 | NOT_RUN | 쿼리 DB 별도 다운로드 필요 |
 | 공개 벤치마크 기준선 | NOT_RUN | 범위상 후속 |
-| 에이전트 inferred·confirmed·증가분 | PASS(측정) / 해석 제한 | 같은 모델 계열 한계 |
+| 에이전트 inferred·confirmed·증가분 | PASS(측정) / 해석 제한 | confirmed는 운영자 대응 후 정답 PoC 재사용, 같은 모델 계열 |
 | 룰 합성·gate·회귀 케이스 | PASS(opengrep) / FAIL(Joern v1, 편입 안 함) | gate JSON |
 | 편입 후 재측정 | PASS | holdout 증가 0 |
 | 정답 밖 결과 판정 | UNKNOWN | 미판정 |
@@ -189,4 +189,4 @@ scripts/sast_synth_measure.sh "$HOPLITES_SAST_SEED/dev" artifacts/sast-python/de
 ~/.cache/hoplites-sast/opengrep/opengrep_osx_arm64 test policies/sast/python/opengrep/helper-param
 ```
 
-에이전트 단계는 프롬프트 v1의 `{INPUT_DIR}`·`{OUTPUT_FILE}`만 치환해 실행하고, `scripts/sast_poc_run.py`와 `scripts/sast_agent.py`로 confirmed 여부를 기록한다. gate는 `scripts/sast_rule_gate.py`를 PyYAML이 있는 SAST venv로 실행한다. 출력 파일·디렉터리는 덮어쓰지 않는다.
+에이전트 단계는 프롬프트 v1의 `{INPUT_DIR}`·`{OUTPUT_FILE}`만 치환해 실행하고, `scripts/sast_poc_run.py`와 `scripts/sast_agent.py`로 confirmed 여부를 기록한다. gate는 `scripts/sast_rule_gate.py`를 PyYAML이 있는 SAST venv로 실행한다. 출력 파일·디렉터리는 덮어쓰지 않는다(모든 스크립트가 기존 출력이 있으면 실패한다).

@@ -1,5 +1,6 @@
 #!/bin/sh
-# Run every baseline engine configuration on one seed set, normalize, and measure.
+# Run every baseline engine configuration on one seed set and normalize its SARIF.
+# Measure afterwards with sast_measure.py (see docs/sast-python-engine-loop.md).
 # Usage: scripts/sast_baseline.sh SEED_SET_DIR OUTPUT_DIR [extra opengrep rule dir] [joern model]
 set -eu
 S=$1; O=$2; EXTRA=${3:-}; MODEL=${4:-policies/sast/python/joern/model-v0.json}

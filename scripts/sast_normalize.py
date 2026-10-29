@@ -44,7 +44,7 @@ def relative_uri(uri, base_ids, uri_base_id, target_root):
     for prefix in (root, "/private" + root):
         if path.startswith(prefix):
             return path[len(prefix) :]
-    return path.lstrip("./") if not path.startswith("/") else path
+    return path.removeprefix("./")
 
 
 def physical(loc, base_ids, target_root):
