@@ -66,7 +66,6 @@ class Fixture:
             "content": base64.b64encode(VULNERABLE).decode(),
         }
         self.ordering = {"base": "v1.1.0", "head": "f" * 40, "status": "ahead", "behind_by": 0}
-        self.listing = {"package": "pkg", "version": "1.1.0", "files": ["index.js"]}
 
     def sources(self):
         return {
@@ -76,7 +75,6 @@ class Fixture:
                 ("fix.json", self.fix),
                 ("release.json", self.release),
                 ("ordering.json", self.ordering),
-                ("listing.json", self.listing),
             ]
         }
 
@@ -208,64 +206,48 @@ class DecisionTests(unittest.TestCase):
         _, report = run(rules, {ROOT + "/lib/parse.js": FIXED})
         self.assertEqual(report["decisions"][0]["grade"], "inferred-present")
 
-    def listed(self, **changes):
-        f = Fixture()
-        listing = sha(f.sources()["listing.json"])
-        return self.usable(
-            release_ref=None,
-            release_file=None,
-            vulnerable_marker="unbounded(",
-            listing_file="listing.json",
-            listing_sha256=listing,
-            **changes,
-        )
+    def marked(self):
+        return self.usable(release_ref=None, release_file=None, vulnerable_marker="unbounded(")
 
-    def test_absence_needs_marker_scan_and_release_listing(self):
-        marked = self.listed()
+    def test_absence_is_never_confirmed_in_v1(self):
         files = {ROOT + "/index.js": b"module.exports = {}\n"}
-        vex, report = run(marked, files)
-        self.assertEqual(report["decisions"][0]["grade"], "confirmed-absent")
-        self.assertEqual(
-            vex["vulnerabilities"][0]["analysis"],
-            dict(
-                vex["vulnerabilities"][0]["analysis"],
-                state="not_affected",
-                justification="code_not_present",
-            ),
-        )
-        self.assertEqual(report["unresolved"], [])
-        # Relocated code (e.g. a bundle) keeps the finding open.
-        _, report = run(marked, dict(files, **{ROOT + "/dist/bundle.js": VULNERABLE}))
+        for rules in [self.marked(), self.usable(release_ref=None, release_file=None)]:
+            vex, report = run(rules, files)
+            self.assertEqual(report["decisions"][0]["grade"], "inferred-absent")
+            self.assertEqual(vex["vulnerabilities"][0]["analysis"]["state"], "in_triage")
+            self.assertNotIn("justification", vex["vulnerabilities"][0]["analysis"])
+        # Relocated code (e.g. a bundle) is reported as present.
+        _, report = run(self.marked(), dict(files, **{ROOT + "/dist/bundle.js": VULNERABLE}))
         self.assertEqual(report["decisions"][0]["grade"], "inferred-present")
-        # A minified file without the literal marker is outside the release listing.
-        _, report = run(marked, dict(files, **{ROOT + "/dist/index.min.js": b"function a(b){}"}))
-        self.assertEqual(report["decisions"][0]["grade"], "inferred-absent")
-        no_listing = self.usable(
-            release_ref=None, release_file=None, vulnerable_marker="unbounded("
-        )
-        _, report = run(no_listing, files)
-        self.assertEqual(report["decisions"][0]["grade"], "inferred-absent")
-        _, report = run(marked, files, version="1.0.0")
-        self.assertEqual(report["decisions"][0]["grade"], "inferred-absent")
-        unmarked = self.usable(release_ref=None, release_file=None)
-        vex, report = run(unmarked, files)
-        self.assertEqual(report["decisions"][0]["grade"], "inferred-absent")
-        self.assertEqual(vex["vulnerabilities"][0]["analysis"]["state"], "in_triage")
 
-    def test_links_never_confirm_absence(self):
-        marked = self.listed()
+    def test_confirmed_absent_mapping_is_reserved_for_code_not_present(self):
+        decision = {
+            "component": "pkg",
+            "version": "1",
+            "grade": "confirmed-absent",
+            "advisory_id": "G",
+            "advisory_sha256": "a",
+            "fix_url": "u",
+            "fix_sha256": "f",
+            "vulnerable_range": "< 2.0.0",
+            "evidence": [],
+        }
+        result = analysis(decision)
+        self.assertEqual(
+            (result["state"], result["justification"]), ("not_affected", "code_not_present")
+        )
+
+    def test_symlinked_target_is_unresolved(self):
+        marked = self.marked()
         files = {ROOT + "/index.js": b"{}"}
         # Target stored as a symbolic link: content unknown.
         vex, report = run(marked, files, links={ROOT + "/lib/parse.js"})
         self.assertEqual(report["decisions"][0]["grade"], "unresolved")
         self.assertEqual(vex["vulnerabilities"][0]["analysis"]["state"], "in_triage")
-        # Any other unread link in the package blocks confirmed absence.
-        _, report = run(marked, files, links={ROOT + "/dist/index.js"})
-        self.assertEqual(report["decisions"][0]["grade"], "inferred-absent")
 
     def test_rejected_sibling_rule_keeps_cve_unresolved(self):
         rejected = [{"cve": "CVE-test", "package": "pkg", "target": "lib/other.js", "reason": "x"}]
-        vex, report = run(self.listed(), {ROOT + "/index.js": b"{}"}, rejected=rejected)
+        vex, report = run(self.marked(), {ROOT + "/index.js": b"{}"}, rejected=rejected)
         self.assertEqual(report["decisions"][0]["grade"], "unresolved")
         self.assertEqual(vex["vulnerabilities"][0]["analysis"]["state"], "in_triage")
 
@@ -276,7 +258,7 @@ class DecisionTests(unittest.TestCase):
         self.assertEqual(report["decisions"][0]["reason"], "no reviewed code-presence rule")
 
     def test_any_present_copy_outranks_absent_copies(self):
-        marked = self.listed()
+        marked = self.marked()
         other = "opt/app/node_modules/pkg"
         files = {ROOT + "/index.js": b"{}", other + "/lib/parse.js": VULNERABLE}
         vex, report = run(marked, files, roots=(ROOT, other))
@@ -415,15 +397,18 @@ class ShellTests(unittest.TestCase):
                 soft = tarfile.TarInfo(ROOT + "/lib/parse.js")
                 soft.type, soft.linkname = tarfile.SYMTYPE, "../dist/esm/index.js"
                 tar.addfile(soft)
+                dangling = tarfile.TarInfo(ROOT + "/dist/gone.js")
+                dangling.type, dangling.linkname = tarfile.LNKTYPE, "missing/target.js"
+                tar.addfile(dangling)
                 outside = tarfile.TarInfo(".hidden/x")
                 tar.addfile(outside, io.BytesIO(b""))
             files, links = read_roots(path, [ROOT])
             self.assertEqual(files[ROOT + "/dist/commonjs/index.js"], VULNERABLE)
-            self.assertEqual(links, [ROOT + "/lib/parse.js"])
+            self.assertEqual(sorted(links), [ROOT + "/dist/gone.js", ROOT + "/lib/parse.js"])
             self.assertNotIn("hidden/x", files)
             prepared = prepare({"ref": [ROOT]}, files, links)
             self.assertEqual(prepared["ref"][2][ROOT], {"name": "pkg"})
-            self.assertEqual(prepared["ref"][3], {ROOT + "/lib/parse.js"})
+            self.assertEqual(prepared["ref"][3], {ROOT + "/dist/gone.js", ROOT + "/lib/parse.js"})
 
 
 if __name__ == "__main__":

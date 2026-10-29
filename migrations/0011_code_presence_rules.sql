@@ -1,9 +1,8 @@
 -- Reviewed code-presence rules (code-presence-v1). A rule names the shipped file or
 -- symbol that carries code an upstream fix changed. It never asserts reachability.
 -- Sources are pinned GitHub advisory, commit, release-file and ordering API snapshots;
--- each SHA-256 is checked before a rule applies. Only confirmed absence of every target,
--- with the shipped file set equal to a reviewed release listing, becomes code_not_present;
--- everything else stays in_triage.
+-- each SHA-256 is checked before a rule applies. These rules can show presence only;
+-- no v1 evidence kind confirms absence, so every decision stays in_triage.
 CREATE TABLE code_presence_rule (
  cve TEXT NOT NULL, advisory_id TEXT NOT NULL,
  ecosystem TEXT NOT NULL CHECK(ecosystem IN ('npm','generic')), package TEXT NOT NULL,
@@ -14,9 +13,6 @@ CREATE TABLE code_presence_rule (
  advisory_file TEXT NOT NULL, advisory_sha256 TEXT NOT NULL,
  fix_file TEXT NOT NULL, fix_sha256 TEXT NOT NULL, fix_url TEXT NOT NULL,
  basis TEXT NOT NULL, reviewed_at TEXT NOT NULL,
- -- Release file listing (package-relative paths); required before absence is confirmed.
- listing_file TEXT, listing_sha256 TEXT,
- CHECK((listing_file IS NULL) = (listing_sha256 IS NULL)),
  CHECK(evidence_kind <> 'elf-symbol' OR vulnerable_marker IS NOT NULL),
  CHECK((release_file IS NULL) = (release_ref IS NULL) AND (release_file IS NULL) = (ordering_file IS NULL)),
  PRIMARY KEY(cve, package, evidence_kind, target)

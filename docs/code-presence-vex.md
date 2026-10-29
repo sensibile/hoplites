@@ -47,7 +47,7 @@
 
 - undici 11건: 수정 커밋마다 v6.x 브랜치에 포함된 커밋을 골랐다. GitHub compare 결과는 `v6.27.0...커밋` = ahead, behind 0이다. 즉 수정은 6.27.0 릴리스보다 뒤에 있다. 그 커밋이 고친 모듈 13개 모두 납품물의 바이트가 `v6.27.0` 태그의 파일과 동일했다. 따라서 납품된 코드는 수정 전 코드다. 등급은 confirmed-present다.
 - brace-expansion 2건: 수정은 `src/index.ts`를 고쳤고, 납품물에는 그 컴파일 산출물(`dist/commonjs/index.js`, `dist/esm/index.js`)만 있다. 이 연결은 `package.json` exports가 require/import를 두 산출물로 매핑한다는 점을 근거로 한다. 두 파일 모두 취약 함수 `function expand_(`가 있다. 수정이 추가한 식별자(CVE-2026-14257의 `EXPANSION_MAX_LENGTH`, CVE-2026-69152의 `length + c.length > maxLength`)는 없다. 등급은 confirmed-present다.
-- 결과적으로 13건 모두 `in_triage`이며 `code_not_present`는 0건이다. `code_not_present`에는 릴리스 파일 목록 snapshot이 필요하지만, 현재 규칙에는 목록이 없다. "취약 코드가 납품물에 있다"는 사실은 확인됐다. 사용 경로의 도달성은 베이스 이미지라서 평가하지 않았다.
+- 결과적으로 13건 모두 `in_triage`이며 `code_not_present`는 0건이다. v1은 부재를 확정하는 근거가 없어 `code_not_present`를 내보내지 않는다(ADR 0012). "취약 코드가 납품물에 있다"는 사실은 확인됐다. 사용 경로의 도달성은 베이스 이미지라서 평가하지 않았다.
 
 ### DT 검증
 
@@ -55,7 +55,7 @@
 - 별도 재조회(`dt-requery.json`): finding API의 suppressed 포함 13건과 active 13건이 모두 `IN_TRIAGE`, `isSuppressed=false`, justification `NOT_SET`이다. 분석 API의 detail이 VEX와 일치하고 감사 이력 주체는 `CycloneDX VEX`다. 원래 finding과 severity는 유지된다.
 - metrics refresh 후 vulnerabilities 13, suppressed 0이다. `findingsAudited=0`은 DT가 IN_TRIAGE를 미감사로 집계한 결과로 보인다(추정, DT 집계 규칙은 미확인).
 - UI는 확인하지 않았다. 검증은 API로만 했다.
-- `not_affected`+`code_not_present` 경로는 실제 DT 반영 사례가 없다. 단위 테스트와 justification 검증 코드로만 확인했다.
+- `not_affected`+`code_not_present`는 v1에서 생성되지 않는다. DT 적용기의 justification 검증 코드만 추가했다.
 
 ## 3. 미해결과 다음 확인
 
@@ -66,6 +66,7 @@
 | Python pip 계열 9건 | DT finding 없음, 미판정 | SBOM에 CPE·위치 없음 | pip vendored 패키지의 위치·식별을 정규화에 보강한다. 이어서 pypi 어댑터(파일 경로 기준 패키지 root)를 추가한다. |
 | 직접 설치 런타임 CVE(node, CPython, OpenJDK, OTP) | 두 도구 0건, 탐지 공백 | 탐지 결과 없음 | 런타임 버전별 vendor advisory를 수집한다. finding 출처를 확보한 뒤 ELF 심볼·빌드 설정 규칙(`elf-symbol`)을 적용한다. |
 | 빌드 설정 근거(config.gypi 등) | 등급만 정의, 미구현 | ADR 0012 | 필요한 CVE가 생기면 inferred 전용으로 구현한다. |
+| 코드 부재 확정(`code_not_present`) | v1 미구현, 부재는 inferred-absent까지만 | 독립 리뷰 2회 지적: 리터럴 표지·파일 목록만으로는 번들·minify된 코드를 배제하지 못함 | 파일별 해시가 있는 수정 전 릴리스 목록과 수정 파일 매핑을 갖춘 근거 종류를 설계한다. 이를 BOSS가 확인한 뒤 구현한다. |
 
 ## 재사용 명령
 

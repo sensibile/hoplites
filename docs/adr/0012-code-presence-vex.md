@@ -19,12 +19,12 @@
 | 납품 파일에 취약 함수 표지가 있고 수정 표지가 없음(컴파일된 산출물) | confirmed-present | `in_triage` |
 | 동적 심볼 표에 취약 함수가 정의됨 | confirmed-present | `in_triage` |
 | 모듈은 있지만 릴리스 파일과 다르거나 표지 대조가 맞지 않음(백포트·로컬 변경 가능) | inferred-present | `in_triage` |
-| 대상 파일이 없고, 검토한 취약 표지가 패키지의 모든 파일에 없으며, 납품 파일 목록이 검토한 릴리스 목록과 같고 미해석 링크가 없음 | confirmed-absent | `not_affected` + `code_not_present` |
-| 대상 파일만 없음(표지 미검토), 표지는 없지만 릴리스 목록 대조가 없거나 다름(minify·이름 변경 가능), 또는 심볼이 없음(인라인·strip 가능) | inferred-absent | `in_triage` |
+| (v1에 없음) 부재를 증명하는 근거 종류. 후보는 아래 "영향과 한계"에 있다 | confirmed-absent | `not_affected` + `code_not_present` |
+| 대상 파일과 검토한 취약 표지가 없음(번들·minify·이름 변경 가능), 또는 심볼이 없음(인라인·strip 가능) | inferred-absent | `in_triage` |
 | 빌드 설정만의 근거 | inferred(현재 미구현) | `in_triage` |
 | 규칙 없음, 같은 CVE의 다른 규칙이 snapshot 검증 실패, 대상이 symlink, 패키지 위치·identity·생태계 불일치, 범위 밖 버전, ELF 해석 실패 | unresolved | `in_triage` |
 
-4. rootfs의 hard link는 원 데이터로 읽고 symlink는 따라가지 않는다. 같은 구성요소의 사본이 여러 개면 하나라도 present이면 present다. absent는 모든 사본이 confirmed-absent일 때만 인정한다. CVE 하나에 대상이 여러 개일 때도 같은 규칙을 적용한다.
+4. rootfs의 hard link는 원 데이터로 읽고, symlink와 대상이 없는 hard link는 따라가지 않고 unresolved로 둔다. 같은 구성요소의 사본이 여러 개면 하나라도 present이면 present다. absent는 모든 사본이 confirmed-absent일 때만 인정한다. CVE 하나에 대상이 여러 개일 때도 같은 규칙을 적용한다.
 5. 배포판 패키지(`pkg:deb`·`apk`·`rpm`)는 이 판정에서 제외하고 배포판 어댑터가 맡는다. `run_project_vex.py --code-presence-sources`는 두 결과를 `(CVE, 구성요소)` 단위로 병합한다. 비배포판 판정이 배포판 어댑터의 "지원하지 않는 배포판" `in_triage`를 대체한다. 따라서 재실행해도 `code_not_present`가 다시 열리지 않는다.
 6. 반영은 기존 `apply_dtrack_vex.py`를 사용한다. justification을 가진 판정은 DT의 `analysisJustification`까지 확인한다.
 
@@ -41,6 +41,8 @@
 - 규칙은 사람이 검토한 대상 경로·표지에 의존한다. 수정이 여러 파일에 걸칠 때 규칙에 빠진 파일이 있으면 그 파일의 포함 여부는 판정되지 않는다.
 - 결과 `in_triage`는 "취약 코드가 납품물에 있음(confirmed)"을 뜻할 수 있다. 등급은 detail과 sidecar에서 확인한다. DT 상태만으로 confirmed와 unresolved를 구분할 수 없다.
 - 빌드 설정(config.gypi 등) 근거와 Python·OTP·JDK 어댑터는 구현하지 않았다.
+- v1은 `code_not_present`를 내보내지 않는다. 대상 파일과 리터럴 표지가 없다는 사실만으로는 부재를 증명하지 못한다. 취약 범위의 릴리스에 대상 파일이 없다면 보통 코드가 다른 파일에 컴파일·번들된 상태이기 때문이다. 독립 리뷰가 이 경로를 두 번 지적했다(VER-005). 그래서 부재 확정은 별도 설계로 넘긴다. 후보 조건은 세 가지다. ① 대상을 포함한 수정 전 릴리스 목록이 파일별 SHA-256과 registry integrity를 가진다. ② 납품 파일이 모두 그 해시와 같고 대상만 로컬에서 제거됐다. ③ 수정 커밋의 모든 변경 파일이 대상 또는 사유가 있는 제외로 매핑된다.
+- SBOM과 rootfs의 연결은 고정 rootfs hash와 이미지 digest 대조에만 의존한다. 실행 summary의 hash까지 읽어 대조하는 것은 후속 과제다.
 
 ## 검증
 

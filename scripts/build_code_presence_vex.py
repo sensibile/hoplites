@@ -13,7 +13,7 @@ from pathlib import Path
 
 from code_presence import build, package_roots, sha, verify_sources
 
-SOURCE_KEYS = ("advisory_file", "fix_file", "release_file", "ordering_file", "listing_file")
+SOURCE_KEYS = ("advisory_file", "fix_file", "release_file", "ordering_file")
 
 
 def load_rules():
@@ -38,7 +38,11 @@ def read_roots(rootfs, wanted):
             if not any(name == r or name.startswith(r + "/") for r in wanted):
                 continue
             if member.isfile() or member.islnk():
-                files[name] = tar.extractfile(member).read()
+                try:
+                    files[name] = tar.extractfile(member).read()
+                except KeyError:
+                    # Dangling hard link: content unknown, handled like a symlink.
+                    links.append(name)
             elif member.issym():
                 links.append(name)
     return files, links
@@ -125,7 +129,8 @@ def main():
             "Presence of shipped code only; reachability and exploitability not assessed",
             "Findings absent from DT are not evaluated here; DT 0 findings is not a safety decision",
             "Symbol absence and build-configuration evidence never produce code_not_present",
-            "code_not_present needs the shipped file set to equal a reviewed release listing",
+            "No v1 evidence confirms absence; code_not_present is not emitted",
+            "SBOM-to-rootfs provenance relies on the pinned rootfs hash and image digest only",
         ],
     )
     a.output.write_bytes(raw)

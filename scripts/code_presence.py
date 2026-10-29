@@ -16,6 +16,8 @@ from elf_linkage import inspect as inspect_elf
 
 RULE_VERSION = "code-presence-v1"
 # Strongest first. Presence of any copy outranks absence; absence needs every copy.
+# code-presence-v1 has no evidence that yields confirmed-absent; the grade and its
+# code_not_present mapping are kept so a later reviewed evidence kind can use them.
 PRESENT = ("confirmed-present", "inferred-present")
 ABSENT = ("confirmed-absent", "inferred-absent")
 BASE_IMAGE_NOTE = (
@@ -100,32 +102,13 @@ def check_package_file(rule, root, files, version, links=()):
         if hits:
             evidence["basis"] = "target absent but vulnerable marker found elsewhere in package"
             return "inferred-present", evidence
-        # A literal marker misses minified or renamed bundles and unread links; only an
-        # unmodified release file set rules those out.
-        listing = rule.get("listing_content")
-        shipped = sorted(p[len(root) + 1 :] for p in scanned)
-        linked = sorted(p for p in links if p.startswith(root + "/"))
-        same_listing = (
-            listing is not None
-            and listing.get("version") == version
-            and sorted(listing.get("files", [])) == shipped
-            and not linked
-        )
-        evidence["release_listing"] = {
-            "reviewed": listing is not None,
-            "matches": same_listing,
-            "links": linked,
-        }
-        if not same_listing:
-            evidence["basis"] = (
-                "target and marker absent, but the shipped file set is not shown to be the "
-                "unmodified release; relocated or minified code not ruled out"
-            )
-            return "inferred-absent", evidence
+        # A literal marker misses minified, bundled or renamed code, and a target absent
+        # from a vulnerable release usually means the code ships in another file. No
+        # evidence available in v1 proves absence, so this path stops at inferred.
         evidence["basis"] = (
-            "target absent, vulnerable marker absent, and shipped files equal the reviewed release listing"
+            "target and vulnerable marker absent; relocated, bundled or minified code not ruled out"
         )
-        return "confirmed-absent", evidence
+        return "inferred-absent", evidence
     raw = files[path]
     text = raw.decode("utf-8", "replace")
     evidence.update(file="present", sha256=sha(raw))
@@ -250,15 +233,7 @@ def verify_sources(rules, sources):
                 ) != ("ahead", 0):
                     raise ValueError("fix commit is not strictly after the reviewed release")
                 release = base64.b64decode(snapshot["content"])
-            listing = None
-            if rule.get("listing_file"):
-                listing_raw = sources.get(rule["listing_file"])
-                if listing_raw is None or sha(listing_raw) != rule["listing_sha256"]:
-                    raise ValueError("release listing snapshot unavailable or changed")
-                listing = json.loads(listing_raw)
-                if listing.get("package") != rule["package"]:
-                    raise ValueError("release listing is for another package")
-            usable.append(dict(rule, release_content=release, listing_content=listing))
+            usable.append(dict(rule, release_content=release))
         except (ValueError, KeyError, TypeError) as error:
             rejected.append(
                 {
