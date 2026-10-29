@@ -1,14 +1,21 @@
 {
   "schema_version": 1,
-  "source_version": "bd96f3aef49519b99dec0d15ff7c8ef5c2945b4c",
+  "source_version": "a820b4a7027813368fd41d3a1b619f19e6f063a1",
+  "link_pin": "a820b4a7027813368fd41d3a1b619f19e6f063a1",
   "files": {
-    ".taeguk/rules/approvals.md": "cc13ba9f6cfa6fb92f3c503e34a56c4f20324927749c0b87d567ab565ed48e68",
+    ".taeguk/rules/approvals.md": "0fcc48e32e0ee8664943056a1432f527691bf6a02e008f5b81b0b51835619c5c",
     ".taeguk/rules/delivery.md": "66a66923fb3296d7f286d8845883c5678375b578e9fc00d0b7bc6bb7df80c68d",
+    ".taeguk/rules/development.md": "d074304b8561e8dbcedede5c3ea685a489ad69a4e6c0e2ce1be22e608be1e6b6",
     ".taeguk/rules/governance.md": "98adb27880316ba215426c136e80335b00e1673fc41228330ec3141b30be0ffc",
-    ".taeguk/rules/index.md": "ad49ceaaa8430eaf4978e35292c892d04c4bbbd5f2141c807b1d9ea19734bc46",
-    ".taeguk/rules/mechanical-checks.md": "a9665883102ccee28e4cbb3194454c518841c073b02c17c19ce9c578176cfe4c",
-    ".taeguk/rules/proposals/index.md": "929ce04a0712932a4bf6366c10a7feb58415e798f3fcf8ac01efec577bfdd13b",
-    ".taeguk/rules/registry.toml": "6d743ee90b0f090fe3bcc87a8c7bb327fde627afbe3b51dc4ee10f2dabd943f3",
-    ".taeguk/rules/verification.md": "c840b4b75a05bd57a377ea1770c456e8b1087be323e3bb2469be6e351b77d55b"
+    ".taeguk/rules/index.md": "70f1c0b677baac04989cb99e7eab52ee9dcb7b9afc59a515736747a5edd5a17b",
+    ".taeguk/rules/mechanical-checks.md": "a96da04792cbebc39d44358932dfb1e0d022f88c47fdb7e27ec151b67f6e8f32",
+    ".taeguk/rules/proposals/archon-pilot.md": "17a04d16047ccb26dec8ac056f522ba2726bb08936bf448e1d1840fa7c5b4170",
+    ".taeguk/rules/proposals/coverage-as-instrument.md": "ff17cbf44e058a01015f7387a56f2494c560535f33ba46294dbf2f896306ff7e",
+    ".taeguk/rules/proposals/index.md": "b8eb1581155d732c317c404515a0fc71036c1006a35596f7d6b9040807dbe1f3",
+    ".taeguk/rules/proposals/intent-requirement-records.md": "004be0b10f188ea1ccfebfe49dbb1ec7f825e228e028531c46113d0a36420a86",
+    ".taeguk/rules/proposals/review-loop-exit.md": "5e489661ba9d2c480a3f63b66faf8d6e22db7754e9aabd9ceff9b05c5cede1eb",
+    ".taeguk/rules/proposals/worktree-first.md": "36dc772be8977a47ce25c6f4928feb3faa1984dfeae399f4d65b28d4d559935c",
+    ".taeguk/rules/registry.toml": "da1f7ca93e52588fc4640831e73a0db9293f28a3ef8eee1ed360bdbc45f7c452",
+    ".taeguk/rules/verification.md": "da9a550eb5de5c2064486400bdcab6601a4091b918d03bf96fa4b0c439509d2d"
   }
 }
