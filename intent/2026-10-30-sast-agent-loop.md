@@ -43,6 +43,6 @@ hoplites 보안 검토자, 납품 앱 소스의 SAST 결과 흐름, 향후 릴�
 ## 연결
 
 - 실험 결과: [docs/sast-python-engine-loop.md](../docs/sast-python-engine-loop.md)
-- 결정: [ADR-0012](../docs/adr/0012-sast-engine-agent-loop.md)
+- 결정: [ADR-0013](../docs/adr/0013-sast-engine-agent-loop.md)
 - 선행 파일럿: `feat/opengrep-cwe`(미병합, JavaScript)
 - 요구사항 ID: 아직 없음(accepted 이후 REQ-007 기록 작성)
