@@ -1,4 +1,7 @@
+import os
 from pathlib import Path
+import shutil
+import subprocess
 import sys
 import unittest
 
@@ -209,6 +212,27 @@ class GateTests(unittest.TestCase):
     def test_precision_regression_blocks_set(self):
         result = self.gate([finding(3)], [finding(3), finding(7, rule="other")], [finding(3)])
         self.assertIn("paired precision 1.0 -> 0.5", result["set"]["problems"])
+
+
+OPENGREP = os.environ.get("OPENGREP") or shutil.which("opengrep")
+RULES = ROOT / "policies/sast/python/opengrep"
+
+
+@unittest.skipUnless(OPENGREP, "opengrep not installed (set OPENGREP)")
+class RuleRegressionTests(unittest.TestCase):
+    """Synthesized rules keep their annotated detect/ignore examples (ruleid/ok comments)."""
+
+    def run_tests(self, directory, *flags):
+        done = subprocess.run(
+            [OPENGREP, "test", *flags, str(directory)], capture_output=True, text=True
+        )
+        self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+
+    def test_request_source_rules(self):
+        self.run_tests(RULES / "request", "--taint-intrafile")
+
+    def test_helper_parameter_rules(self):
+        self.run_tests(RULES / "helper-param")
 
 
 if __name__ == "__main__":
