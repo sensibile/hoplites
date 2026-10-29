@@ -153,6 +153,10 @@ def main():
             decision.get("analysisState") == expected["state"].upper()
             and decision.get("analysisDetails") == expected["detail"]
             and decision.get("isSuppressed") is should_suppress
+            and (
+                "justification" not in expected
+                or decision.get("analysisJustification") == expected["justification"].upper()
+            )
         )
         after.append(
             {
