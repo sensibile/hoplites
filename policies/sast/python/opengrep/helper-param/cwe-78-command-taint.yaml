@@ -1,0 +1,39 @@
+rules:
+  - id: hoplites.python.cwe-78.shell-command-from-input.helper-param
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request data or a helper parameter is built into a shell command string. Pass an argv
+      list without shell=True, or quote with shlex.quote.
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-inside: |
+              def $F(..., $P, ...):
+                ...
+          - pattern-not-inside: |
+              @$D.$M(...)
+              def $F(...):
+                ...
+          - pattern: $P
+          - focus-metavariable: $P
+    pattern-sanitizers:
+      - pattern: shlex.quote(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: os.system($CMD)
+              - pattern: os.popen($CMD, ...)
+              - pattern: subprocess.$FN($CMD, ..., shell=True, ...)
+          - focus-metavariable: $CMD
+    metadata:
+      cwe: ["CWE-78: Improper Neutralization of Special Elements used in an OS Command"]
+      confidence: MEDIUM
+      hoplites-rule-version: 1
+      hoplites-origin:
+        source: agent-confirmed dev cases
+        hypotheses: [A-6]
+        explore-prompt: hoplites-sast-agent-explore/1
+        synthesis: hoplites-sast-rule-synthesis/1
+        model: claude-opus-5-5
+      hoplites-regression-cases: [D-78-2]

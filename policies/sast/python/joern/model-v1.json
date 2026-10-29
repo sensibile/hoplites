@@ -1,0 +1,87 @@
+{
+  "schema": "hoplites-joern-taint-model/1",
+  "id": "hoplites-python-flask-v1",
+  "version": "1",
+  "status": "rejected",
+  "origin": "Synthesized 2026-10-30 from agent-confirmed dev cases (prompt hoplites-sast-agent-explore/1, synthesis hoplites-sast-rule-synthesis/1, model claude-opus-5-5). Adds sanitizers seen on the fixed pairs of confirmed cases.",
+  "sources": [
+    "request\\.(args|form|values|files|cookies|headers|json|data|get_json|get_data)\\b.*"
+  ],
+  "sanitizers": [
+    "shlex\\.quote\\(.*",
+    "(werkzeug\\.security\\.)?safe_join\\(.*",
+    "[A-Z][A-Z0-9_]*\\.get\\(.*",
+    "current_app\\.config\\[.*\\]\\.get\\(.*"
+  ],
+  "sinks": [
+    {
+      "id": "hoplites.joern.cwe-89.dbapi-execute",
+      "cwe": "CWE-89",
+      "name": "execute|executemany|executescript",
+      "regression_cases": [
+        "D-89-1",
+        "D-89-2"
+      ]
+    },
+    {
+      "id": "hoplites.joern.cwe-78.os-command",
+      "cwe": "CWE-78",
+      "name": "system|popen",
+      "code": "os\\..*",
+      "regression_cases": [
+        "D-78-1"
+      ]
+    },
+    {
+      "id": "hoplites.joern.cwe-78.subprocess",
+      "cwe": "CWE-78",
+      "name": "run|call|check_call|check_output|Popen|getoutput|getstatusoutput",
+      "code": "subprocess\\..*",
+      "regression_cases": [
+        "D-78-3"
+      ]
+    },
+    {
+      "id": "hoplites.joern.cwe-22.file-open",
+      "cwe": "CWE-22",
+      "name": "open|send_file|extractall|extract",
+      "regression_cases": [
+        "D-22-1",
+        "D-22-3",
+        "D-22-4"
+      ]
+    },
+    {
+      "id": "hoplites.joern.cwe-918.http-client",
+      "cwe": "CWE-918",
+      "name": "get|post|put|patch|delete|head|request",
+      "code": "requests\\..*",
+      "regression_cases": [
+        "D-918-1",
+        "D-918-3",
+        "D-918-4"
+      ]
+    },
+    {
+      "id": "hoplites.joern.cwe-918.urlopen",
+      "cwe": "CWE-918",
+      "name": "urlopen"
+    },
+    {
+      "id": "hoplites.joern.cwe-502.deserialize",
+      "cwe": "CWE-502",
+      "name": "loads|load|unsafe_load|decode",
+      "code": "(pickle|marshal|dill|shelve|jsonpickle|yaml)\\..*",
+      "regression_cases": [
+        "D-502-1",
+        "D-502-3"
+      ]
+    }
+  ],
+  "known_gaps": [
+    "Inter-file flows were not found by pysrc2cpg/dataflowengineoss in v0 (0/6 on dev); not addressed",
+    "Check-style guards (if not allowed(url): abort) are not modelled",
+    "Flask view arguments are not sources"
+  ],
+  "gate": "2026-10-30 dev gate v1: cwe-78.os-command and cwe-502.deserialize passed; cwe-89, cwe-78.subprocess, cwe-22, cwe-918 fired on fixed pairs. Not promoted; v0 stays the Joern baseline."
+}

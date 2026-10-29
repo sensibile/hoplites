@@ -8,6 +8,7 @@ digest in manifest.json, and never edits raw output. Normalization is sast_norma
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -33,8 +34,8 @@ def dir_digest(root, patterns):
     return {"path": str(root.resolve()), "files": len(files), "sha256": tree_digest(files)}
 
 
-def run(command, cwd):
-    done = subprocess.run(command, cwd=cwd, capture_output=True, text=True)
+def run(command, cwd, env=None):
+    done = subprocess.run(command, cwd=cwd, capture_output=True, text=True, env=env)
     return done.returncode, done.stdout[-4000:], done.stderr[-4000:]
 
 
@@ -79,42 +80,40 @@ def opengrep(args, out):
     }
 
 
+def joern_env(args):
+    env = dict(os.environ)
+    if args.java_home:
+        env["JAVA_HOME"] = str(args.java_home)
+        env["PATH"] = f"{args.java_home}/bin:{env['PATH']}"
+    return env
+
+
 def joern(args, out):
+    """Call the launchers in bin/ directly; the top-level wrappers need GNU readlink on macOS."""
     sarif, raw = out / "joern.sarif", out / "joern-flows.json"
     cpg = out / "cpg.bin"
-    parse = [
-        str(Path(args.joern_home) / "joern-parse"),
-        str(Path(args.target) / "app"),
-        "--language",
-        "pythonsrc",
-        "-o",
-        str(cpg),
-    ]
-    code, _, err = run(parse, args.target)
+    home = Path(args.joern_home)
+    jvm = ["-J-XX:+UseG1GC", f"-Dlog4j.configurationFile={home / 'conf/log4j2.xml'}"]
+    parse = [str(home / "bin/joern-parse"), *jvm, str(Path(args.target) / "app")]
+    parse += ["--language", "pythonsrc", "-o", str(cpg)]
+    env = joern_env(args)
+    code, _, err = run(parse, home, env)
     if code != 0:
         raise SystemExit(f"joern-parse failed: {err}")
-    command = [
-        str(Path(args.joern_home) / "joern"),
-        "--script",
-        str(JOERN_SCRIPT),
-        "--param",
-        f"cpgFile={cpg}",
-        "--param",
-        f"modelFile={Path(args.model).resolve()}",
-        "--param",
-        f"outFile={raw}",
-    ]
-    code, stdout, err = run(command, args.target)
+    command = [str(home / "bin/repl-bridge"), *jvm, "--script", str(JOERN_SCRIPT)]
+    command += ["--param", f"cpgFile={cpg}", "--param", f"modelFile={Path(args.model).resolve()}"]
+    command += ["--param", f"outFile={raw}"]
+    code, stdout, err = run(command, home, env)
     if not raw.exists():
         raise SystemExit(f"joern script produced no output: {err or stdout}")
     sarif.write_text(json.dumps(flows_to_sarif(json.loads(raw.read_text()), args), indent=2) + "\n")
-    version = (
-        (Path(args.joern_home) / "VERSION").read_text().strip()
-        if (Path(args.joern_home) / "VERSION").exists()
-        else args.joern_version
-    )
+    java = subprocess.run(["java", "-version"], capture_output=True, text=True, env=env).stderr
     return {
-        "engine": {"name": "joern", "version": version},
+        "engine": {
+            "name": "joern",
+            "version": args.joern_version,
+            "java": java.splitlines()[0] if java else None,
+        },
         "model": {"path": str(Path(args.model).resolve()), "sha256": sha256(args.model)},
         "script_sha256": sha256(JOERN_SCRIPT),
         "command": [parse, command],
@@ -125,45 +124,42 @@ def joern(args, out):
     }
 
 
+def location(step):
+    return {
+        "physicalLocation": {
+            "artifactLocation": {"uri": "app/" + step["file"]},
+            "region": {"startLine": step["line"]},
+        }
+    }
+
+
 def flows_to_sarif(doc, args):
-    """Convert the Joern taint script's flow list to SARIF 2.1.0 (raw JSON is kept as-is)."""
-    rules = {}
-    results = []
+    """Convert Joern flows to SARIF 2.1.0: one result per (rule, sink line), shortest path kept.
+
+    The raw flow JSON keeps every path.
+    """
+    rules, best = {}, {}
     for f in doc["flows"]:
         rules.setdefault(f["rule"], {"id": f["rule"], "properties": {"tags": [f["cwe"]]}})
         steps = [s for s in f["path"] if s.get("file") and s.get("line")]
-        sink = steps[-1] if steps else {"file": f.get("sinkFile"), "line": f.get("sinkLine")}
-        loc = lambda s: {
-            "physicalLocation": {
-                "artifactLocation": {"uri": "app/" + s["file"]},
-                "region": {"startLine": s["line"]},
-            }
-        }  # noqa: E731
-        results.append(
-            {
-                "ruleId": f["rule"],
-                "message": {"text": f"{f['cwe']} flow from {f['source']} to {f['sink']}"},
-                "locations": [loc(sink)],
-                "codeFlows": [
-                    {"threadFlows": [{"locations": [{"location": loc(s)} for s in steps]}]}
-                ],
-            }
-        )
-    return {
-        "version": "2.1.0",
-        "runs": [
-            {
-                "tool": {
-                    "driver": {
-                        "name": "joern",
-                        "version": args.joern_version,
-                        "rules": list(rules.values()),
-                    }
-                },
-                "results": results,
-            }
-        ],
-    }
+        if not steps:
+            continue
+        key = (f["rule"], steps[-1]["file"], steps[-1]["line"])
+        if key not in best or len(steps) < len(best[key][1]):
+            best[key] = (f, steps)
+    results = [
+        {
+            "ruleId": f["rule"],
+            "message": {"text": f"{f['cwe']} flow from {f['source']} to {f['sink']}"},
+            "locations": [location(steps[-1])],
+            "codeFlows": [
+                {"threadFlows": [{"locations": [{"location": location(s)} for s in steps]}]}
+            ],
+        }
+        for key, (f, steps) in sorted(best.items())
+    ]
+    driver = {"name": "joern", "version": args.joern_version, "rules": list(rules.values())}
+    return {"version": "2.1.0", "runs": [{"tool": {"driver": driver}, "results": results}]}
 
 
 def main():
@@ -178,6 +174,7 @@ def main():
     parser.add_argument("--taint-intrafile", action="store_true")
     parser.add_argument("--joern-home", type=Path)
     parser.add_argument("--joern-version", default="unknown")
+    parser.add_argument("--java-home", type=Path)
     parser.add_argument("--model", type=Path, help="Joern source/sink model JSON")
     args = parser.parse_args()
     out = (args.output_dir / args.config).resolve()

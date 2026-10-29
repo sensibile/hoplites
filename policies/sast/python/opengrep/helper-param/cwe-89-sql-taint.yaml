@@ -1,0 +1,40 @@
+rules:
+  - id: hoplites.python.cwe-89.dynamic-sql-without-binding.helper-param
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request data or a helper parameter reaches the SQL text of execute() and no bound
+      parameters are passed. Use placeholders and pass values separately.
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-inside: |
+              def $F(..., $P, ...):
+                ...
+          - pattern-not-inside: |
+              @$D.$M(...)
+              def $F(...):
+                ...
+          - pattern: $P
+          - focus-metavariable: $P
+    pattern-sanitizers:
+      - patterns:
+          - pattern: $MAP.get(...)
+          - metavariable-regex:
+              metavariable: $MAP
+              regex: ^[A-Z][A-Z0-9_]*$
+    pattern-sinks:
+      - patterns:
+          - pattern: $C.execute($Q)
+          - focus-metavariable: $Q
+    metadata:
+      cwe: ["CWE-89: Improper Neutralization of Special Elements used in an SQL Command"]
+      confidence: MEDIUM
+      hoplites-rule-version: 1
+      hoplites-origin:
+        source: agent-confirmed dev cases
+        hypotheses: [A-3, A-4]
+        explore-prompt: hoplites-sast-agent-explore/1
+        synthesis: hoplites-sast-rule-synthesis/1
+        model: claude-opus-5-5
+      hoplites-regression-cases: [D-89-3, D-89-4]
