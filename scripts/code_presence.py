@@ -81,10 +81,13 @@ def package_roots(sbom, component):
     return sorted(set(roots))
 
 
-def check_package_file(rule, root, files, version):
+def check_package_file(rule, root, files, version, links=()):
     """One rule target in one package root; returns (grade, evidence)."""
     path = posixpath.join(root, rule["target"])
     evidence = {"root": root, "path": path, "kind": "package-file"}
+    if path in links:
+        evidence.update(file="link", basis="target is a symbolic link; content not inspected")
+        return "unresolved", evidence
     if path not in files:
         marker = rule.get("vulnerable_marker")
         evidence["file"] = "absent"
@@ -97,7 +100,31 @@ def check_package_file(rule, root, files, version):
         if hits:
             evidence["basis"] = "target absent but vulnerable marker found elsewhere in package"
             return "inferred-present", evidence
-        evidence["basis"] = "target absent and vulnerable marker absent from every package file"
+        # A literal marker misses minified or renamed bundles and unread links; only an
+        # unmodified release file set rules those out.
+        listing = rule.get("listing_content")
+        shipped = sorted(p[len(root) + 1 :] for p in scanned)
+        linked = sorted(p for p in links if p.startswith(root + "/"))
+        same_listing = (
+            listing is not None
+            and listing.get("version") == version
+            and sorted(listing.get("files", [])) == shipped
+            and not linked
+        )
+        evidence["release_listing"] = {
+            "reviewed": listing is not None,
+            "matches": same_listing,
+            "links": linked,
+        }
+        if not same_listing:
+            evidence["basis"] = (
+                "target and marker absent, but the shipped file set is not shown to be the "
+                "unmodified release; relocated or minified code not ruled out"
+            )
+            return "inferred-absent", evidence
+        evidence["basis"] = (
+            "target absent, vulnerable marker absent, and shipped files equal the reviewed release listing"
+        )
         return "confirmed-absent", evidence
     raw = files[path]
     text = raw.decode("utf-8", "replace")
@@ -223,15 +250,28 @@ def verify_sources(rules, sources):
                 ) != ("ahead", 0):
                     raise ValueError("fix commit is not strictly after the reviewed release")
                 release = base64.b64decode(snapshot["content"])
-            usable.append(dict(rule, release_content=release))
+            listing = None
+            if rule.get("listing_file"):
+                listing_raw = sources.get(rule["listing_file"])
+                if listing_raw is None or sha(listing_raw) != rule["listing_sha256"]:
+                    raise ValueError("release listing snapshot unavailable or changed")
+                listing = json.loads(listing_raw)
+                if listing.get("package") != rule["package"]:
+                    raise ValueError("release listing is for another package")
+            usable.append(dict(rule, release_content=release, listing_content=listing))
         except (ValueError, KeyError, TypeError) as error:
             rejected.append(
-                {"cve": rule.get("cve"), "target": rule.get("target"), "reason": str(error)}
+                {
+                    "cve": rule.get("cve"),
+                    "package": rule.get("package"),
+                    "target": rule.get("target"),
+                    "reason": str(error),
+                }
             )
     return usable, rejected
 
 
-def evaluate(component, cve, rules, roots, files, manifests):
+def evaluate(component, cve, rules, roots, files, manifests, links=(), rejected=()):
     """Decision for one DT component–vulnerability pair."""
     base = {
         "component": component["name"],
@@ -240,7 +280,20 @@ def evaluate(component, cve, rules, roots, files, manifests):
         "purl": component.get("purl"),
         "cve": cve,
     }
-    matching = [r for r in rules if r["cve"] == cve and r["package"] == component["name"]]
+    kind = purl_type(component.get("purl"))
+    matching = [
+        r
+        for r in rules
+        if r["cve"] == cve and r["package"] == component["name"] and r["ecosystem"] == kind
+    ]
+    if any(r.get("cve") == cve and r.get("package") == component["name"] for r in rejected):
+        # A target whose rule failed verification was never checked; the rest cannot decide.
+        return dict(
+            base,
+            grade="unresolved",
+            reason="a reviewed rule for this CVE failed source verification",
+            next="Restore or re-review the pinned snapshot named in rejected_rules",
+        )
     if not matching:
         return dict(
             base,
@@ -283,7 +336,7 @@ def evaluate(component, cve, rules, roots, files, manifests):
                 continue
         for rule in matching:
             if rule["evidence_kind"] == "package-file":
-                grade, item = check_package_file(rule, root, files, component["version"])
+                grade, item = check_package_file(rule, root, files, component["version"], links)
             else:
                 grade, item = check_elf_symbol(rule, root, files)
             grades.append(grade)
@@ -322,10 +375,11 @@ def analysis(decision):
     return {"state": "in_triage", "detail": detail}
 
 
-def build(export, sbom, rules, roots_files, timestamp, serial):
+def build(export, sbom, rules, roots_files, timestamp, serial, rejected=()):
     """Project VEX for every non-distro finding of the export plus a decision report.
 
-    roots_files: {component_ref: (roots, files, manifests)} prepared by the shell.
+    roots_files: {component_ref: (roots, files, manifests, links)} prepared by the shell.
+    rejected: rules that failed source verification; their CVEs stay unresolved.
     """
     sbom_ids = {(c["name"], c.get("version"), c.get("purl")) for c in sbom.get("components", [])}
     components = {c["bom-ref"]: c for c in export.get("components", [])}
@@ -350,8 +404,8 @@ def build(export, sbom, rules, roots_files, timestamp, serial):
                 continue
             if (c["name"], c.get("version"), c.get("purl")) not in sbom_ids:
                 raise ValueError("Export finding component not in verified SBOM")
-            roots, files, manifests = roots_files.get(c["bom-ref"], ([], {}, {}))
-            decision = evaluate(c, v["id"], rules, roots, files, manifests)
+            roots, files, manifests, links = roots_files.get(c["bom-ref"], ([], {}, {}, ()))
+            decision = evaluate(c, v["id"], rules, roots, files, manifests, links, rejected)
             finding = copy.deepcopy(v)
             finding["affects"] = [{"ref": c["bom-ref"]}]
             finding["analysis"] = analysis(decision)

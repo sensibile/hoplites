@@ -1,8 +1,9 @@
 -- Reviewed code-presence rules (code-presence-v1). A rule names the shipped file or
 -- symbol that carries code an upstream fix changed. It never asserts reachability.
 -- Sources are pinned GitHub advisory, commit, release-file and ordering API snapshots;
--- each SHA-256 is checked before a rule applies. Only confirmed absence of every target
--- becomes code_not_present; everything else stays in_triage.
+-- each SHA-256 is checked before a rule applies. Only confirmed absence of every target,
+-- with the shipped file set equal to a reviewed release listing, becomes code_not_present;
+-- everything else stays in_triage.
 CREATE TABLE code_presence_rule (
  cve TEXT NOT NULL, advisory_id TEXT NOT NULL,
  ecosystem TEXT NOT NULL CHECK(ecosystem IN ('npm','generic')), package TEXT NOT NULL,
@@ -13,11 +14,16 @@ CREATE TABLE code_presence_rule (
  advisory_file TEXT NOT NULL, advisory_sha256 TEXT NOT NULL,
  fix_file TEXT NOT NULL, fix_sha256 TEXT NOT NULL, fix_url TEXT NOT NULL,
  basis TEXT NOT NULL, reviewed_at TEXT NOT NULL,
+ -- Release file listing (package-relative paths); required before absence is confirmed.
+ listing_file TEXT, listing_sha256 TEXT,
+ CHECK((listing_file IS NULL) = (listing_sha256 IS NULL)),
  CHECK(evidence_kind <> 'elf-symbol' OR vulnerable_marker IS NOT NULL),
  CHECK((release_file IS NULL) = (release_ref IS NULL) AND (release_file IS NULL) = (ordering_file IS NULL)),
  PRIMARY KEY(cve, package, evidence_kind, target)
 );
-INSERT INTO code_presence_rule VALUES
+INSERT INTO code_presence_rule (
+ cve, advisory_id, ecosystem, package, vulnerable_range, evidence_kind, target, vulnerable_marker, fix_marker, release_ref, release_file, release_sha256, ordering_file, ordering_sha256, advisory_file, advisory_sha256, fix_file, fix_sha256, fix_url, basis, reviewed_at
+) VALUES
  ('CVE-2026-15157','GHSA-m8rv-5g2x-5cg5','npm','undici','< 6.28.0','package-file','lib/dispatcher/client-h1.js',NULL,NULL,'v6.27.0','release-undici-v6.27.0/lib_dispatcher_client-h1.js.json','e6d7e8982bf5518faca26a09ebd3372e0412f74ee47558ac75df9eb3ae1efa78','compare-v6.27.0-740a0b7c173cb4a83a5b693e96e8f3a116cfc400.json','209f37bfb0da5e36e98234ff36bbfbd07b72a14feeffc0df6c99fdf5955a7fcb','GHSA-m8rv-5g2x-5cg5.json','ab2f78f0f77c37674e60da88ce415691e08ea2ad5eee1f658377f0df4c818a16','740a0b7c173cb4a83a5b693e96e8f3a116cfc400.json','45068129997d1347ee7bbb46fd3112d6470268f9c4f89f8f933fcef4e2ab19e9','https://github.com/nodejs/undici/commit/740a0b7c173cb4a83a5b693e96e8f3a116cfc400','v6.x fix commit modifies this module and lands after tag v6.27.0; shipped bytes are compared with the module at that tag','2026-10-30'),
  ('CVE-2026-16728','GHSA-8xcm-r25x-g524','npm','undici','< 6.28.0','package-file','lib/handler/retry-handler.js',NULL,NULL,'v6.27.0','release-undici-v6.27.0/lib_handler_retry-handler.js.json','896a09ced14339321fd45d44a5698f8c98284e1bdebafae27678122d608f1ba4','compare-v6.27.0-cba3a52ac2e7abcc4e656d82af8579ea82c2bb9e.json','0f7bf1032b2dfd02829ccb42127241ee34ad60fb8dfe7bc1da8ff2d2f960a9f0','GHSA-8xcm-r25x-g524.json','6c4a5e1f9f128dd86ec8344ede4d017018a830abad280dd9557c09677137a86b','cba3a52ac2e7abcc4e656d82af8579ea82c2bb9e.json','0d59a921b3875b1850c32611e5da029f587e6e91cd21f175dc34ae519706c59f','https://github.com/nodejs/undici/commit/cba3a52ac2e7abcc4e656d82af8579ea82c2bb9e','v6.x fix commit modifies this module and lands after tag v6.27.0; shipped bytes are compared with the module at that tag','2026-10-30'),
  ('CVE-2026-16729','GHSA-v3r7-h72x-cjcm','npm','undici','< 6.28.0','package-file','lib/web/cookies/util.js',NULL,NULL,'v6.27.0','release-undici-v6.27.0/lib_web_cookies_util.js.json','42c5fadce6f5581ef6a80ed4428dcc6b9813b79112feae94aeef3176d7535b30','compare-v6.27.0-af7484043ee075a6f216da0ad77e1dac55199235.json','77ace5fa640dfa68bcc4bb64fd9083f64695f1db78b5bc373bb1abb3a4515416','GHSA-v3r7-h72x-cjcm.json','2c488308c9bb00246f5a51023f8d3df7245957e85092f8dc28332f07ccaf608c','af7484043ee075a6f216da0ad77e1dac55199235.json','30aeaf2743cb15a006aed7c4f9f32f7e48279e9d12f7113feab22eef91c6e393','https://github.com/nodejs/undici/commit/af7484043ee075a6f216da0ad77e1dac55199235','v6.x fix commit modifies this module and lands after tag v6.27.0; shipped bytes are compared with the module at that tag','2026-10-30'),

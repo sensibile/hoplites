@@ -19,12 +19,12 @@
 | 납품 파일에 취약 함수 표지가 있고 수정 표지가 없음(컴파일된 산출물) | confirmed-present | `in_triage` |
 | 동적 심볼 표에 취약 함수가 정의됨 | confirmed-present | `in_triage` |
 | 모듈은 있지만 릴리스 파일과 다르거나 표지 대조가 맞지 않음(백포트·로컬 변경 가능) | inferred-present | `in_triage` |
-| 대상 파일이 없고, 검토한 취약 표지가 패키지의 모든 파일에 없음 | confirmed-absent | `not_affected` + `code_not_present` |
-| 대상 파일만 없음(표지 미검토), 또는 심볼이 없음(인라인·strip 가능) | inferred-absent | `in_triage` |
+| 대상 파일이 없고, 검토한 취약 표지가 패키지의 모든 파일에 없으며, 납품 파일 목록이 검토한 릴리스 목록과 같고 미해석 링크가 없음 | confirmed-absent | `not_affected` + `code_not_present` |
+| 대상 파일만 없음(표지 미검토), 표지는 없지만 릴리스 목록 대조가 없거나 다름(minify·이름 변경 가능), 또는 심볼이 없음(인라인·strip 가능) | inferred-absent | `in_triage` |
 | 빌드 설정만의 근거 | inferred(현재 미구현) | `in_triage` |
-| 규칙 없음, 패키지 위치·identity 불일치, 범위 밖 버전, ELF 해석 실패 | unresolved | `in_triage` |
+| 규칙 없음, 같은 CVE의 다른 규칙이 snapshot 검증 실패, 대상이 symlink, 패키지 위치·identity·생태계 불일치, 범위 밖 버전, ELF 해석 실패 | unresolved | `in_triage` |
 
-4. 같은 구성요소의 사본이 여러 개면 하나라도 present이면 present다. absent는 모든 사본이 confirmed-absent일 때만 인정한다. CVE 하나에 대상이 여러 개일 때도 같은 규칙을 적용한다.
+4. rootfs의 hard link는 원 데이터로 읽고 symlink는 따라가지 않는다. 같은 구성요소의 사본이 여러 개면 하나라도 present이면 present다. absent는 모든 사본이 confirmed-absent일 때만 인정한다. CVE 하나에 대상이 여러 개일 때도 같은 규칙을 적용한다.
 5. 배포판 패키지(`pkg:deb`·`apk`·`rpm`)는 이 판정에서 제외하고 배포판 어댑터가 맡는다. `run_project_vex.py --code-presence-sources`는 두 결과를 `(CVE, 구성요소)` 단위로 병합한다. 비배포판 판정이 배포판 어댑터의 "지원하지 않는 배포판" `in_triage`를 대체한다. 따라서 재실행해도 `code_not_present`가 다시 열리지 않는다.
 6. 반영은 기존 `apply_dtrack_vex.py`를 사용한다. justification을 가진 판정은 DT의 `analysisJustification`까지 확인한다.
 

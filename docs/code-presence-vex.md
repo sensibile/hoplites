@@ -47,7 +47,7 @@
 
 - undici 11건: 수정 커밋마다 v6.x 브랜치에 포함된 커밋을 골랐다. GitHub compare 결과는 `v6.27.0...커밋` = ahead, behind 0이다. 즉 수정은 6.27.0 릴리스보다 뒤에 있다. 그 커밋이 고친 모듈 13개 모두 납품물의 바이트가 `v6.27.0` 태그의 파일과 동일했다. 따라서 납품된 코드는 수정 전 코드다. 등급은 confirmed-present다.
 - brace-expansion 2건: 수정은 `src/index.ts`를 고쳤고, 납품물에는 그 컴파일 산출물(`dist/commonjs/index.js`, `dist/esm/index.js`)만 있다. 이 연결은 `package.json` exports가 require/import를 두 산출물로 매핑한다는 점을 근거로 한다. 두 파일 모두 취약 함수 `function expand_(`가 있다. 수정이 추가한 식별자(CVE-2026-14257의 `EXPANSION_MAX_LENGTH`, CVE-2026-69152의 `length + c.length > maxLength`)는 없다. 등급은 confirmed-present다.
-- 결과적으로 13건 모두 `in_triage`이며 `code_not_present`는 0건이다. "취약 코드가 납품물에 있다"는 사실은 확인됐다. 사용 경로의 도달성은 베이스 이미지라서 평가하지 않았다.
+- 결과적으로 13건 모두 `in_triage`이며 `code_not_present`는 0건이다. `code_not_present`에는 릴리스 파일 목록 snapshot이 필요하지만, 현재 규칙에는 목록이 없다. "취약 코드가 납품물에 있다"는 사실은 확인됐다. 사용 경로의 도달성은 베이스 이미지라서 평가하지 않았다.
 
 ### DT 검증
 
