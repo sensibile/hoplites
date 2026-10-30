@@ -17,4 +17,5 @@
 
 - [0010 새 이미지 처리의 작업 계약](0010-image-processing-contract.md)
 - [0011 Codex 리뷰 gate와 세션의 리뷰 요청·머지](0011-codex-review-gate.md)
+- [0012 비배포판 CVE의 코드 포함 판정 VEX](0012-code-presence-vex.md)
 - [0013 SAST 엔진 다중화와 에이전트 보완 루프의 측정 방식](0013-sast-engine-agent-loop.md)

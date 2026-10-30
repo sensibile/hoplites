@@ -30,7 +30,7 @@ OpenSSL 설치 버전 `3.0.13-0ubuntu3.16`을 Ubuntu 공식 OSV의 noble 소스 
 6. 정확히 검토한 웹 원문 판정과 machine-readable 결과가 충돌하면 `in_triage`로 전달한다. 미해결은 sidecar에 남기고 안전 판정 VEX에 넣지 않는다. `exploitable`은 vendor range의 affected 상태를 뜻하며 실제 공격 재현을 했다는 뜻이 아니다.
 7. `apply_dtrack_vex.py`가 프로젝트/컴포넌트/기존 finding을 확인한 뒤 VEX를 업로드한다. suppressed 포함 조회와 pagination으로 기존 판정도 재검증한다. 판정 상태·상세 근거·suppression을 실제 API에서 확인한다. active/triage 재판정에는 VEX만으로 이전 suppression이 해제되지 않을 수 있어 분석 API로 해제하고 감사 comment를 남긴다. `--refresh-metrics`는 집계 갱신과 snapshot 기록을 요청한다. 집계는 비동기이므로 완료 판단에는 finding 상태 및 새 집계 값 확인도 필요하다.
 
-Ubuntu LTS OSV 어댑터가 현재 구현 범위다. Alpine/RPM/비패키지 런타임은 향후 별도 근거 어댑터를 추가한다. 지원하지 않는 식별·배포판은 미해결이며 자동 제외하지 않는다. 현재 rootfs reader는 이번 Ubuntu 이미지의 dpkg/os-release 경로를 사용한다. 동일 binary name이 여러 architecture에 있으면 PURL의 arch로 선택한다. arch 없이 후보가 여러 개면 미해결로 남긴다.
+Ubuntu LTS OSV 어댑터가 현재 구현 범위다. Alpine/RPM은 향후 별도 근거 어댑터를 추가한다. npm 등 비배포판 구성요소는 [코드 포함 판정 VEX](code-presence-vex.md)가 담당하며 `--code-presence-sources`로 병합한다. 지원하지 않는 식별·배포판은 미해결이며 자동 제외하지 않는다. 현재 rootfs reader는 이번 Ubuntu 이미지의 dpkg/os-release 경로를 사용한다. 동일 binary name이 여러 architecture에 있으면 PURL의 arch로 선택한다. arch 없이 후보가 여러 개면 미해결로 남긴다.
 
 ## 철회된 CVE 기록 처리
 

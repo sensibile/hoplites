@@ -25,7 +25,11 @@ def main():
     p.add_argument("--apply", action="store_true")
     p.add_argument("--debian-tracker")
     p.add_argument("--debian-tracker-sha256")
+    p.add_argument("--code-presence-sources", help="Pinned sources for code-presence rules")
+    p.add_argument("--rootfs-sha256", help="Pinned rootfs hash; required with code presence")
     a = p.parse_args()
+    if a.code_presence_sources and not a.rootfs_sha256:
+        p.error("--code-presence-sources requires --rootfs-sha256")
     out = Path(a.output_dir)
     if out.exists():
         p.error("Use new output directory")
@@ -58,6 +62,8 @@ def main():
     out.mkdir(parents=True)
     (out / "before-vex.json").write_bytes(export)
     scripts = Path(__file__).parent
+    # With code presence, the distro decisions are merged with non-distro decisions below.
+    distro_vex = out / ("distro.vex.json" if a.code_presence_sources else "project.vex.json")
 
     def run(name, args):
         subprocess.run([sys.executable, str(scripts / name), *map(str, args)], check=True)
@@ -96,7 +102,7 @@ def main():
                 "--tracker-sha256",
                 a.debian_tracker_sha256,
                 "--output",
-                out / "project.vex.json",
+                distro_vex,
                 "--evidence",
                 out / "decisions.json",
             ],
@@ -131,13 +137,40 @@ def main():
                 "--reviewed-sources",
                 a.reviewed_sources,
                 "--output",
-                out / "project.vex.json",
+                distro_vex,
                 "--evidence",
                 out / "decisions.json",
             ],
         )
     else:
         p.error("Unsupported VEX distro")
+    if a.code_presence_sources:
+        run(
+            "build_code_presence_vex.py",
+            [
+                "--export",
+                out / "before-vex.json",
+                "--sbom",
+                a.sbom,
+                "--rootfs",
+                a.rootfs,
+                "--rootfs-sha256",
+                a.rootfs_sha256,
+                "--sources",
+                a.code_presence_sources,
+                "--output",
+                out / "code-presence.vex.json",
+                "--evidence",
+                out / "code-presence-decisions.json",
+            ],
+        )
+        from code_presence import merge
+
+        merged = merge(
+            json.loads(distro_vex.read_bytes()),
+            json.loads((out / "code-presence.vex.json").read_bytes()),
+        )
+        (out / "project.vex.json").write_text(json.dumps(merged, indent=2) + "\n")
     if a.apply and json.loads((out / "project.vex.json").read_bytes()).get("vulnerabilities"):
         run(
             "apply_dtrack_vex.py",
