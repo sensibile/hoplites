@@ -273,6 +273,18 @@ class OutputGuardTests(unittest.TestCase):
             self.assertEqual(out.read_text(), "kept")
 
 
+class EngineRunnerTests(unittest.TestCase):
+    def test_engine_name_on_path_resolves_to_absolute_binary(self):
+        from sast_engines import executable
+
+        self.assertEqual(
+            executable(Path(sys.executable).name),
+            str(Path(shutil.which(Path(sys.executable).name)).resolve()),
+        )
+        with self.assertRaises(SystemExit):
+            executable("hoplites-no-such-engine")
+
+
 class RuleLoadingTests(unittest.TestCase):
     def test_joern_sinks_without_regression_cases_are_judged(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 
@@ -21,6 +22,14 @@ JOERN_SCRIPT = Path(__file__).parent / "sast_joern_taint.sc"
 
 def sha256(path):
     return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def executable(name):
+    """Absolute path of an engine binary given as a path or a PATH command name."""
+    found = shutil.which(name)
+    if found is None:
+        raise SystemExit(f"executable not found: {name}")
+    return str(Path(found).resolve())
 
 
 def dir_digest(root, patterns):
@@ -69,7 +78,7 @@ def opengrep(args, out):
         "engine": {
             "name": "opengrep",
             "version": version,
-            "binary_sha256": sha256(Path(args.opengrep).resolve()),
+            "binary_sha256": sha256(args.opengrep),
         },
         "rules": [dir_digest(r, ["*.yaml", "*.yml"]) for r in args.rules],
         "command": command,
@@ -194,6 +203,13 @@ def main():
     parser.add_argument("--java-home", type=Path)
     parser.add_argument("--model", type=Path, help="Joern source/sink model JSON")
     args = parser.parse_args()
+    # Engines run with other working directories, so every input path is made absolute first.
+    args.target = args.target.resolve()
+    args.rules = [str(Path(r).resolve()) for r in args.rules]
+    args.model = args.model.resolve() if args.model else None
+    args.joern_home = args.joern_home.resolve() if args.joern_home else None
+    if args.engine in ("bandit", "opengrep"):
+        setattr(args, args.engine, executable(getattr(args, args.engine)))
     out = (args.output_dir / args.config).resolve()
     if out.exists():
         parser.error("Use a new output directory")
