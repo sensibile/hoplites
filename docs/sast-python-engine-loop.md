@@ -109,7 +109,7 @@ holdout(취약 15, 수정본·음성 18).
 
 ## 룰 합성과 승격 gate
 
-dev의 confirmed 19건에서 opengrep taint 룰을 합성했다([policies/sast/python/opengrep](../policies/sast/python/opengrep)). 합성자는 이 세션(claude-opus-5-5), 절차 ID는 `hoplites-sast-rule-synthesis/1`이다. 각 룰 메타데이터에 출처 가설, 탐색 프롬프트, 모델, `hoplites-regression-cases`를 기록하고, 탐지·비탐지 예제를 `opengrep test`로 검증한다.
+dev의 confirmed 19건에서 opengrep taint 룰을 합성했다([policies/sast/python/opengrep](../policies/sast/python/opengrep)). 합성자는 이 세션(claude-opus-5-5), 절차 ID는 `hoplites-sast-rule-synthesis/1`이다. 각 룰 메타데이터에 출처 가설, 탐색 프롬프트, 모델, `hoplites-regression-cases`를 기록하고, 탐지·비탐지 예제를 `opengrep test`로 검증한다. 예제는 일부러 취약한 Python이라 `*.pyfixture`로 저장한다. `.py`로 두면 저장소 CodeQL이 앱 코드로 보고 경고 22건(critical·high)을 내서 main ruleset이 머지를 막았다. `scripts/sast_rule_test.py`가 임시 디렉터리에 `.py`로 복사해 `opengrep test`를 실행한다. 확장자만 바꾸면 `opengrep test`가 예제를 건너뛰고 통과로 보고하므로, 이 실행기는 "All tests passed"가 없으면 실패로 처리한다. 그 22건의 정·오탐은 분석하지 않았고 측정에도 넣지 않았다. CodeQL 비교는 라이선스 확인 뒤 별도로 한다.
 
 - `request/`(6룰, `--taint-intrafile`로 실행): Flask `request.*` source → SQL 텍스트(바인딩 없는 `execute`), 셸 문자열, 파일 경로(`open`, `send_file`), 외부 요청 URL, 역직렬화 sink. 별도 패턴 룰로 filter 없는 tar 추출.
 - `helper-param/`(5룰, intrafile 없이 실행): 라우트가 아닌 함수의 매개변수 → 같은 함수 안의 sink. 파일 간 흐름의 마지막 구간을 잡는다.
@@ -185,8 +185,8 @@ python3 scripts/sast_measure.py --truth artifacts/sast-python/dev/baseline/truth
   --findings artifacts/sast-python/dev/baseline/*/findings.json \
   --union "engines=bandit,opengrep-rules-intrafile,joern-model" --output artifacts/sast-python/dev/baseline/measure.json
 scripts/sast_synth_measure.sh "$HOPLITES_SAST_SEED/dev" artifacts/sast-python/dev synth-1
-~/.cache/hoplites-sast/opengrep/opengrep_osx_arm64 test --taint-intrafile policies/sast/python/opengrep/request
-~/.cache/hoplites-sast/opengrep/opengrep_osx_arm64 test policies/sast/python/opengrep/helper-param
+python3 scripts/sast_rule_test.py policies/sast/python/opengrep/request --opengrep ~/.cache/hoplites-sast/opengrep/opengrep_osx_arm64 --taint-intrafile
+python3 scripts/sast_rule_test.py policies/sast/python/opengrep/helper-param --opengrep ~/.cache/hoplites-sast/opengrep/opengrep_osx_arm64
 ```
 
 에이전트 단계는 프롬프트 v1의 `{INPUT_DIR}`·`{OUTPUT_FILE}`만 치환해 실행하고, `scripts/sast_poc_run.py`와 `scripts/sast_agent.py`로 confirmed 여부를 기록한다. gate는 `scripts/sast_rule_gate.py`를 PyYAML이 있는 SAST venv로 실행한다. 출력 파일·디렉터리는 덮어쓰지 않는다(모든 스크립트가 기존 출력이 있으면 실패한다).

@@ -307,9 +307,9 @@ class RuleRegressionTests(unittest.TestCase):
     """Synthesized rules keep their annotated detect/ignore examples (ruleid/ok comments)."""
 
     def run_tests(self, directory, *flags):
-        done = subprocess.run(
-            [OPENGREP, "test", *flags, str(directory)], capture_output=True, text=True
-        )
+        runner = ROOT / "scripts/sast_rule_test.py"
+        command = [sys.executable, str(runner), str(directory), "--opengrep", OPENGREP, *flags]
+        done = subprocess.run(command, capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
 
     def test_request_source_rules(self):
