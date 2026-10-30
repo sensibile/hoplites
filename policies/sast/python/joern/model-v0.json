@@ -1,0 +1,25 @@
+{
+  "schema": "hoplites-joern-taint-model/1",
+  "id": "hoplites-python-flask-v0",
+  "version": "0",
+  "status": "baseline",
+  "origin": "Pre-registered 2026-10-30 before the first Joern scan, from Flask/stdlib API knowledge only. No seed-set result was used.",
+  "sources": [
+    "request\\.(args|form|values|files|cookies|headers|json|data|get_json|get_data)\\b.*"
+  ],
+  "sanitizers": [],
+  "sinks": [
+    {"id": "hoplites.joern.cwe-89.dbapi-execute", "cwe": "CWE-89", "name": "execute|executemany|executescript"},
+    {"id": "hoplites.joern.cwe-78.os-command", "cwe": "CWE-78", "name": "system|popen", "code": "os\\..*"},
+    {"id": "hoplites.joern.cwe-78.subprocess", "cwe": "CWE-78", "name": "run|call|check_call|check_output|Popen|getoutput|getstatusoutput", "code": "subprocess\\..*"},
+    {"id": "hoplites.joern.cwe-22.file-open", "cwe": "CWE-22", "name": "open|send_file|extractall|extract"},
+    {"id": "hoplites.joern.cwe-918.http-client", "cwe": "CWE-918", "name": "get|post|put|patch|delete|head|request", "code": "requests\\..*"},
+    {"id": "hoplites.joern.cwe-918.urlopen", "cwe": "CWE-918", "name": "urlopen"},
+    {"id": "hoplites.joern.cwe-502.deserialize", "cwe": "CWE-502", "name": "loads|load|unsafe_load|decode", "code": "(pickle|marshal|dill|shelve|jsonpickle|yaml)\\..*"}
+  ],
+  "known_gaps": [
+    "Flask view arguments (path parameters) are not sources",
+    "No sanitizers: allowlists, safe_join, shlex.quote and parameterized queries are not recognized",
+    "yaml.load is flagged regardless of Loader"
+  ]
+}

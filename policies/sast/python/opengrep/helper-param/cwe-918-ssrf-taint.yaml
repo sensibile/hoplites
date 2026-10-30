@@ -1,0 +1,60 @@
+rules:
+  - id: hoplites.python.cwe-918.request-url-from-input.helper-param
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request data or a helper parameter controls the URL or host of an outbound request.
+      Parse it and compare scheme, hostname and port with an exact allowlist.
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-inside: |
+              def $F(..., $P, ...):
+                ...
+          - pattern-not-inside: |
+              @$D.$M(...)
+              def $F(...):
+                ...
+          - pattern: $P
+          - focus-metavariable: $P
+    pattern-sanitizers:
+      - patterns:
+          - pattern: $MAP.get(...)
+          - metavariable-regex:
+              metavariable: $MAP
+              regex: ^[A-Z][A-Z0-9_]*$
+      - pattern: flask.current_app.config[$K].get(...)
+      - by-side-effect: true
+        patterns:
+          - pattern-inside: |
+              if not $CHECK($U):
+                ...
+          - pattern: $U
+          - metavariable-regex:
+              metavariable: $CHECK
+              regex: ^_?(is_)?(allowed|valid|trusted)\w*$
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: requests.$M($URL, ...)
+              - pattern: urllib.request.urlopen($URL, ...)
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                $PARSED = urlparse(...)
+                ...
+                if <... $PARSED.hostname ...>:
+                  ...
+                ...
+          - focus-metavariable: $URL
+    metadata:
+      cwe: ["CWE-918: Server-Side Request Forgery (SSRF)"]
+      confidence: MEDIUM
+      hoplites-rule-version: 1
+      hoplites-origin:
+        source: agent-confirmed dev cases
+        hypotheses: [A-13]
+        explore-prompt: hoplites-sast-agent-explore/1
+        synthesis: hoplites-sast-rule-synthesis/1
+        model: claude-opus-5-5
+      hoplites-regression-cases: [D-918-2]

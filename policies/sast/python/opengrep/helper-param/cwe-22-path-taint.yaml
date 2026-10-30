@@ -1,0 +1,47 @@
+rules:
+  - id: hoplites.python.cwe-22.file-path-from-input.helper-param
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request data or a helper parameter selects a file path without containment. Use
+      safe_join/send_from_directory or check realpath with os.path.commonpath.
+    mode: taint
+    pattern-sources:
+      - patterns:
+          - pattern-inside: |
+              def $F(..., $P, ...):
+                ...
+          - pattern-not-inside: |
+              @$D.$M(...)
+              def $F(...):
+                ...
+          - pattern: $P
+          - focus-metavariable: $P
+    pattern-sanitizers:
+      - pattern-either:
+          - pattern: safe_join(...)
+          - pattern: werkzeug.security.safe_join(...)
+          - pattern: werkzeug.utils.secure_filename(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: open($PATH, ...)
+              - pattern: flask.send_file($PATH, ...)
+          - pattern-not-inside: |
+              def $F(...):
+                ...
+                if <... os.path.commonpath(...) ...>:
+                  ...
+                ...
+          - focus-metavariable: $PATH
+    metadata:
+      cwe: ["CWE-22: Improper Limitation of a Pathname to a Restricted Directory"]
+      confidence: MEDIUM
+      hoplites-rule-version: 1
+      hoplites-origin:
+        source: agent-confirmed dev cases
+        hypotheses: [A-9]
+        explore-prompt: hoplites-sast-agent-explore/1
+        synthesis: hoplites-sast-rule-synthesis/1
+        model: claude-opus-5-5
+      hoplites-regression-cases: [D-22-2]

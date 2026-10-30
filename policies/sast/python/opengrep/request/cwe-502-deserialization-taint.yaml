@@ -1,0 +1,37 @@
+rules:
+  - id: hoplites.python.cwe-502.deserialize-untrusted.request
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Request data, a helper parameter or file content is deserialized with a loader that can
+      construct arbitrary objects. Use json or yaml.safe_load.
+    mode: taint
+    pattern-sources:
+      - pattern-either:
+          - pattern: flask.request.$ATTR
+          - pattern: flask.request.$FN(...)
+      - pattern: open(...)
+    pattern-sinks:
+      - patterns:
+          - pattern-either:
+              - pattern: pickle.loads($DATA, ...)
+              - pattern: pickle.load($DATA, ...)
+              - pattern: marshal.loads($DATA)
+              - pattern: jsonpickle.decode($DATA, ...)
+              - pattern: yaml.unsafe_load($DATA)
+              - patterns:
+                  - pattern: yaml.load($DATA, ...)
+                  - pattern-not: yaml.load($DATA, Loader=yaml.SafeLoader)
+                  - pattern-not: yaml.load($DATA, Loader=yaml.CSafeLoader)
+          - focus-metavariable: $DATA
+    metadata:
+      cwe: ["CWE-502: Deserialization of Untrusted Data"]
+      confidence: MEDIUM
+      hoplites-rule-version: 1
+      hoplites-origin:
+        source: agent-confirmed dev cases
+        hypotheses: [A-16, A-18, A-19]
+        explore-prompt: hoplites-sast-agent-explore/1
+        synthesis: hoplites-sast-rule-synthesis/1
+        model: claude-opus-5-5
+      hoplites-regression-cases: [D-502-1, D-502-3, D-502-4]
